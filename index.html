@@ -4,12 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>POINT CLOUD STUDIO</title>
-  <script type="module" crossorigin src="/Point-cloud-studio/assets/index-CSzdp_TH.js"></script>
-  <link rel="stylesheet" crossorigin href="/Point-cloud-studio/assets/index-B9SwibvO.css">
+  <script type="module" crossorigin src="/Point-cloud-studio/assets/index-D-R0EleN.js"></script>
+  <link rel="stylesheet" crossorigin href="/Point-cloud-studio/assets/index-DbqwWOv1.css">
 </head>
 <body>
   <div id="app">
     <canvas id="canvas"></canvas>
+
+    <!-- Mobile: floating button to open/close the controls panel -->
+    <button id="panel-toggle" aria-label="Toggle controls panel">≡</button>
 
     <div id="sidebar">
       <div id="sidebar-header">
@@ -173,7 +176,10 @@
 
       <div id="sidebar-footer">
         <div class="divider"></div>
-        <div class="footer-text">ORBIT · PAN · SCROLL ZOOM</div>
+        <div class="footer-text">
+          <span class="hint-desktop">ORBIT · PAN · SCROLL ZOOM</span>
+          <span class="hint-mobile">DRAG · PINCH ZOOM</span>
+        </div>
       </div>
     </div>
 
