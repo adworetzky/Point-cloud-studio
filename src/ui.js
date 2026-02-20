@@ -55,6 +55,21 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
     })
   }
 
+  // ─── Cloud style selector ───────────────────────────────────────────────
+
+  const organicBtn     = document.getElementById('mode-organic')
+  const structuralBtn  = document.getElementById('mode-structural')
+
+  function setCloudStyle(style) {
+    params.cloudStyle = style
+    organicBtn?.classList.toggle('mode-active',     style === 'organic')
+    structuralBtn?.classList.toggle('mode-active',  style === 'structural')
+    onRebuild()
+  }
+
+  organicBtn?.addEventListener('click',    () => setCloudStyle('organic'))
+  structuralBtn?.addEventListener('click', () => setCloudStyle('structural'))
+
   // ─── Geometry (rebuild on change) ───────────────────────────────────────
 
   bindSlider('pointCount',    'pointCount',    0, true)
