@@ -57,18 +57,98 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
 
   // ─── Cloud style selector ───────────────────────────────────────────────
 
-  const organicBtn     = document.getElementById('mode-organic')
-  const structuralBtn  = document.getElementById('mode-structural')
+  const organicBtn    = document.getElementById('mode-organic')
+  const structuralBtn = document.getElementById('mode-structural')
+  const imageBtn      = document.getElementById('mode-image')
+  const imageControls = document.getElementById('image-controls')
 
   function setCloudStyle(style) {
     params.cloudStyle = style
-    organicBtn?.classList.toggle('mode-active',     style === 'organic')
-    structuralBtn?.classList.toggle('mode-active',  style === 'structural')
+    organicBtn?.classList.toggle('mode-active',    style === 'organic')
+    structuralBtn?.classList.toggle('mode-active', style === 'structural')
+    imageBtn?.classList.toggle('mode-active',      style === 'image')
+    if (imageControls) imageControls.style.display = style === 'image' ? 'block' : 'none'
     onRebuild()
   }
 
   organicBtn?.addEventListener('click',    () => setCloudStyle('organic'))
   structuralBtn?.addEventListener('click', () => setCloudStyle('structural'))
+  imageBtn?.addEventListener('click',      () => setCloudStyle('image'))
+
+  // ─── Image upload ────────────────────────────────────────────────────────
+
+  const imageUpload    = document.getElementById('imageUpload')
+  const btnImageUpload = document.getElementById('btn-image-upload')
+  const imageFilename  = document.getElementById('image-filename')
+
+  btnImageUpload?.addEventListener('click', () => imageUpload?.click())
+
+  imageUpload?.addEventListener('change', () => {
+    const file = imageUpload.files[0]
+    if (!file) return
+    if (imageFilename) imageFilename.textContent = file.name.slice(0, 14)
+
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+
+    img.onload = () => {
+      // Downsample to max 256×256 for performance
+      const maxDim = 256
+      const scale  = Math.min(1, maxDim / Math.max(img.width, img.height))
+      const w      = Math.round(img.width  * scale)
+      const h      = Math.round(img.height * scale)
+
+      const offscreen = document.createElement('canvas')
+      offscreen.width  = w
+      offscreen.height = h
+      const ctx = offscreen.getContext('2d')
+      ctx.drawImage(img, 0, 0, w, h)
+
+      const raw = ctx.getImageData(0, 0, w, h)
+      params.imageData   = raw.data
+      params.imageWidth  = w
+      params.imageHeight = h
+      URL.revokeObjectURL(url)
+
+      if (params.cloudStyle === 'image') onRebuild()
+    }
+
+    img.src = url
+  })
+
+  // ─── Map mode toggle ─────────────────────────────────────────────────────
+
+  const mapmodeHeight  = document.getElementById('mapmode-height')
+  const mapmodeDensity = document.getElementById('mapmode-density')
+
+  function setMapMode(mode) {
+    params.imageMapMode = mode
+    mapmodeHeight?.classList.toggle('mode-active',  mode === 'height')
+    mapmodeDensity?.classList.toggle('mode-active', mode === 'density')
+    if (params.cloudStyle === 'image') onRebuild()
+  }
+
+  mapmodeHeight?.addEventListener('click',  () => setMapMode('height'))
+  mapmodeDensity?.addEventListener('click', () => setMapMode('density'))
+
+  // ─── Color theme selector ────────────────────────────────────────────────
+
+  const themeCityscan = document.getElementById('theme-cityscan')
+  const themeCosmic   = document.getElementById('theme-cosmic')
+  const themeBio      = document.getElementById('theme-bio')
+
+  function setTheme(theme) {
+    params.colorTheme = theme
+    themeCityscan?.classList.toggle('mode-active', theme === 'cityscan')
+    themeCosmic?.classList.toggle('mode-active',   theme === 'cosmic')
+    themeBio?.classList.toggle('mode-active',      theme === 'bio')
+    onParamChange('colorTheme', theme)
+    onRebuild()
+  }
+
+  themeCityscan?.addEventListener('click', () => setTheme('cityscan'))
+  themeCosmic?.addEventListener('click',   () => setTheme('cosmic'))
+  themeBio?.addEventListener('click',      () => setTheme('bio'))
 
   // ─── Geometry (rebuild on change) ───────────────────────────────────────
 

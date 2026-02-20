@@ -1,7 +1,36 @@
 import * as THREE from 'three'
 import { PerlinNoise } from './noise.js'
 
-// ─── Shaders for circular points ────────────────────────────────────────────
+// ─── Color themes ────────────────────────────────────────────────────────────
+
+export const COLOR_THEMES = {
+  cityscan: {
+    base:  0x00ffe0,
+    dim:   0x004d45,
+    hover: 0xffffff,
+    conn:  0x80fff0,
+    bg:    0x020a08,
+    fog:   0x020a08,
+  },
+  cosmic: {
+    base:  0xaa66ff,
+    dim:   0x220033,
+    hover: 0xffffff,
+    conn:  0xcc99ff,
+    bg:    0x04010a,
+    fog:   0x04010a,
+  },
+  bio: {
+    base:  0x44ff88,
+    dim:   0x003322,
+    hover: 0xffffff,
+    conn:  0x88ffbb,
+    bg:    0x010a04,
+    fog:   0x010a04,
+  },
+}
+
+// ─── Point shader ────────────────────────────────────────────────────────────
 
 const POINT_VERT = `
   attribute vec3 color;
@@ -32,6 +61,44 @@ const POINT_FRAG = `
   }
 `
 
+// ─── Edge pulse shader ───────────────────────────────────────────────────────
+
+const LINE_VERT = `
+  attribute float aEdgeT;
+  attribute float aEdgeId;
+  varying float vEdgeT;
+  varying float vEdgeId;
+
+  void main() {
+    vEdgeT  = aEdgeT;
+    vEdgeId = aEdgeId;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+
+const LINE_FRAG = `
+  uniform float uTime;
+  uniform float uOpacity;
+  uniform vec3  uColor;
+  varying float vEdgeT;
+  varying float vEdgeId;
+
+  void main() {
+    // Stagger pulse phase per edge using golden ratio
+    float phase = fract(uTime * 0.35 + vEdgeId * 0.618033988);
+
+    // Narrow Gaussian pulse traveling t=0 → t=1
+    float dist  = abs(vEdgeT - phase);
+    dist = min(dist, 1.0 - dist);           // wrap at ends
+    float pulse = exp(-dist * dist * 140.0);
+
+    // Base line + pulse highlight
+    vec3  col = uColor * (uOpacity + pulse * 0.9);
+    float a   = uOpacity + pulse * 0.7;
+    gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
+  }
+`
+
 /**
  * PointCloud — manages geometry, connections, drift, and hover.
  */
@@ -53,6 +120,12 @@ export class PointCloud {
     // Three.js objects
     this.pointsMesh  = null
     this.lineSegments = null
+
+    // Connection pulse uniforms (set in _buildConnections)
+    this._lineUniforms = null
+
+    // Adjacency list for O(degree) BFS in setHovered
+    this._adjacency = null
 
     // Hover
     this.hoveredIndex = -1
@@ -80,6 +153,8 @@ export class PointCloud {
 
     if (p.cloudStyle === 'structural') {
       this._buildStructural(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'image') {
+      this._buildImageDriven(positions, colors, this.driftOffsets, srnd, p)
     } else {
       this._buildOrganic(positions, colors, this.driftOffsets, srnd, p)
     }
@@ -109,11 +184,22 @@ export class PointCloud {
     this._buildConnections()
   }
 
-  // ─── Organic (default) cloud ────────────────────────────────────────────
+  // ─── Theme helper ──────────────────────────────────────────────────────────
+
+  _themeColors(p) {
+    const t = COLOR_THEMES[p.colorTheme] || COLOR_THEMES.cityscan
+    return {
+      base:  new THREE.Color(t.base),
+      dim:   new THREE.Color(t.dim),
+      hover: new THREE.Color(t.hover),
+      conn:  new THREE.Color(t.conn),
+    }
+  }
+
+  // ─── Organic (default) cloud ───────────────────────────────────────────────
 
   _buildOrganic(positions, colors, driftOffsets, srnd, p) {
-    const baseColor = new THREE.Color(0x00ffe0)
-    const dimColor  = new THREE.Color(0x004d45)
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
 
     for (let i = 0; i < p.pointCount; i++) {
       // Spherical random distribution
@@ -154,28 +240,26 @@ export class PointCloud {
     }
   }
 
-  // ─── Structural / architectural city-scan cloud ─────────────────────────
+  // ─── Structural / architectural city-scan cloud ────────────────────────────
 
   _buildStructural(positions, colors, driftOffsets, srnd, p) {
-    const baseColor = new THREE.Color(0x00ffe0)
-    const dimColor  = new THREE.Color(0x004d45)
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
 
     // Grid of building footprints filling the cloud radius
     const numCells  = Math.max(3, Math.round(p.cloudRadius / 8))
-    const totalSize = p.cloudRadius * 1.6          // total city footprint
+    const totalSize = p.cloudRadius * 1.6
     const cellSize  = totalSize / numCells
-    const streetGap = cellSize * 0.22              // gap between buildings (street)
-    const bldgW     = cellSize - streetGap         // building footprint width
+    const streetGap = cellSize * 0.22
+    const bldgW     = cellSize - streetGap
     const halfBldg  = bldgW * 0.5
 
-    // Pre-generate building heights with seeded RNG
+    // Pre-generate building heights
     const totalCells = numCells * numCells
     const heights    = new Float32Array(totalCells)
     let   maxH       = 0.001
 
     for (let k = 0; k < totalCells; k++) {
       const u = srnd()
-      // ~28% chance of a very flat roof/plaza; rest graduated toward towers
       const h = u < 0.28
         ? srnd() * p.cloudRadius * 0.07
         : Math.pow(srnd(), 0.45) * p.cloudRadius * 0.85
@@ -183,8 +267,11 @@ export class PointCloud {
       if (h > maxH) maxH = h
     }
 
-    // Vertically center the cityscape: push down so mid-height aligns at y=0
     const yCenter = -maxH * 0.35
+
+    // LiDAR scan ring parameters — creates horizontal density bands on facades
+    const numRings   = Math.max(8, Math.round(maxH / 3))
+    const ringSpacing = maxH / numRings
 
     // Weighted CDF — taller buildings attract proportionally more scan points
     const totalW = heights.reduce((a, b) => a + Math.max(0.3, b), 0)
@@ -209,24 +296,30 @@ export class PointCloud {
       const cz   = Math.floor(bIdx / numCells)
       const bH   = heights[bIdx]
 
-      // Building centre in world space
       const bx = (cx - numCells * 0.5 + 0.5) * cellSize
       const bz = (cz - numCells * 0.5 + 0.5) * cellSize
 
       let px, py, pz
 
       if (bH < 1.5) {
-        // Flat / plaza — scatter on ground level
         px = bx + (srnd() - 0.5) * bldgW
         pz = bz + (srnd() - 0.5) * bldgW
         py = yCenter + srnd() * 0.5
       } else {
         const roll = srnd()
         if (roll < 0.55) {
-          // ── Wall face (55%) ──────────────────────────────────────────────
+          // ── Wall face (55%) — 70% snapped to scan ring ──────────────────
           const face  = Math.floor(srnd() * 4)
           const along = srnd() * bldgW
-          const wallY = srnd() * bH
+          let wallY
+          if (srnd() < 0.70) {
+            // Snap to a scan ring with small jitter
+            const ring = Math.floor(srnd() * numRings)
+            wallY = ring * ringSpacing + (srnd() - 0.5) * ringSpacing * 0.20
+            wallY = Math.min(wallY, bH)
+          } else {
+            wallY = srnd() * bH
+          }
           if      (face === 0) { px = bx - halfBldg;         pz = bz - halfBldg + along }
           else if (face === 1) { px = bx + halfBldg;         pz = bz - halfBldg + along }
           else if (face === 2) { px = bx - halfBldg + along; pz = bz - halfBldg }
@@ -239,15 +332,13 @@ export class PointCloud {
           py = yCenter + bH + srnd() * 0.2
         } else {
           // ── Ground / street (20%) ────────────────────────────────────────
-          // Allow points slightly outside building bounds to populate streets
           px = bx + (srnd() - 0.5) * cellSize
           pz = bz + (srnd() - 0.5) * cellSize
           py = yCenter + srnd() * 0.4
         }
       }
 
-      // Apply noise as LiDAR scan scatter:
-      // mostly horizontal (preserves vertical building structure)
+      // LiDAR scatter noise — mostly horizontal (preserves vertical structure)
       const ns = this.noise.fbm3(
         px * p.noiseScale,
         py * p.noiseScale,
@@ -267,16 +358,171 @@ export class PointCloud {
       driftOffsets[i * 3 + 1] = srnd() * 100
       driftOffsets[i * 3 + 2] = srnd() * 100
 
-      // Height-based coloring: dim at street level, bright at rooftops
-      const frac = Math.max(0, Math.min(1, (py - yCenter) / maxH))
-      const c    = dimColor.clone().lerp(baseColor, 0.15 + frac * 0.85)
+      // Height + ring-pulsed coloring
+      const frac     = Math.max(0, Math.min(1, (py - yCenter) / maxH))
+      const ringFrac = (py - yCenter) / ringSpacing
+      const ringPulse = 0.5 + 0.5 * Math.cos(ringFrac * Math.PI * 2)
+      const brightness = 0.10 + frac * 0.72 + ringPulse * 0.18
+      const c = dimColor.clone().lerp(baseColor, Math.min(1, brightness))
       colors[i * 3]     = c.r
       colors[i * 3 + 1] = c.g
       colors[i * 3 + 2] = c.b
     }
   }
 
-  // ─── Connections ────────────────────────────────────────────────────────
+  // ─── Image-driven cloud ────────────────────────────────────────────────────
+
+  _buildImageDriven(positions, colors, driftOffsets, srnd, p) {
+    const hasImage = p.imageData && p.imageWidth > 0 && p.imageHeight > 0
+
+    if (!hasImage) {
+      this._buildDefaultScanPattern(positions, colors, driftOffsets, srnd, p)
+      return
+    }
+
+    // Pre-compute brightness per pixel
+    const { imageData: data, imageWidth: imgW, imageHeight: imgH } = p
+    const pixelCount = imgW * imgH
+    const brightness = new Float32Array(pixelCount)
+    for (let k = 0; k < pixelCount; k++) {
+      const b = k * 4
+      brightness[k] = (data[b] + data[b + 1] + data[b + 2]) / (255 * 3)
+    }
+
+    if (p.imageMapMode === 'density') {
+      this._buildDensityMap(positions, colors, driftOffsets, srnd, p, brightness, imgW, imgH)
+    } else {
+      this._buildHeightMap(positions, colors, driftOffsets, srnd, p, brightness, imgW, imgH)
+    }
+  }
+
+  _buildHeightMap(positions, colors, driftOffsets, srnd, p, brightness, imgW, imgH) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R    = p.cloudRadius
+    const maxY = R * 0.8
+
+    for (let i = 0; i < p.pointCount; i++) {
+      const u = srnd()
+      const v = srnd()
+
+      const px = Math.min(imgW - 1, Math.floor(u * imgW))
+      const py = Math.min(imgH - 1, Math.floor(v * imgH))
+      const bright = brightness[py * imgW + px]
+
+      const wx = (u - 0.5) * R * 2
+      const wz = (v - 0.5) * R * 2
+      const wy = (bright - 0.5) * maxY * 2
+
+      // Noise as surface jitter — preserves topography shape
+      const ns = this.noise.fbm3(wx * p.noiseScale, wy * p.noiseScale, wz * p.noiseScale, 3)
+      positions[i * 3]     = wx + ns * p.noiseStrength * 0.6
+      positions[i * 3 + 1] = wy + ns * p.noiseStrength * 2.0
+      positions[i * 3 + 2] = wz + ns * p.noiseStrength * 0.6
+
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+
+      const c = dimColor.clone().lerp(baseColor, bright)
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+  }
+
+  _buildDensityMap(positions, colors, driftOffsets, srnd, p, brightness, imgW, imgH) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R = p.cloudRadius
+
+    let maxBright = 0.001
+    for (let k = 0; k < brightness.length; k++) {
+      if (brightness[k] > maxBright) maxBright = brightness[k]
+    }
+
+    let placed = 0
+    let attempts = 0
+    const maxAttempts = p.pointCount * 20
+
+    while (placed < p.pointCount && attempts < maxAttempts) {
+      attempts++
+      const u = srnd()
+      const v = srnd()
+      const px = Math.min(imgW - 1, Math.floor(u * imgW))
+      const py = Math.min(imgH - 1, Math.floor(v * imgH))
+      const bright = brightness[py * imgW + px]
+
+      // Accept with probability proportional to brightness (min 5%)
+      if (srnd() > Math.max(0.05, bright / maxBright)) continue
+
+      const wx = (u - 0.5) * R * 2
+      const wz = (v - 0.5) * R * 2
+      const ns = this.noise.fbm3(wx * p.noiseScale, 0, wz * p.noiseScale, 3)
+      const wy = ns * p.noiseStrength * R * 0.4
+
+      const i = placed
+      positions[i * 3]     = wx
+      positions[i * 3 + 1] = wy
+      positions[i * 3 + 2] = wz
+
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+
+      const c = dimColor.clone().lerp(baseColor, 0.3 + bright * 0.7)
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+      placed++
+    }
+
+    // Fill any unfilled slots (very dark image) with sphere scatter
+    for (let i = placed; i < p.pointCount; i++) {
+      const theta = Math.acos(2 * srnd() - 1)
+      const phi   = srnd() * Math.PI * 2
+      positions[i * 3]     = Math.sin(theta) * Math.cos(phi) * R * 0.3
+      positions[i * 3 + 1] = Math.sin(theta) * Math.sin(phi) * R * 0.3
+      positions[i * 3 + 2] = Math.cos(theta) * R * 0.3
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+      colors[i * 3]     = dimColor.r
+      colors[i * 3 + 1] = dimColor.g
+      colors[i * 3 + 2] = dimColor.b
+    }
+  }
+
+  // Default pattern shown in IMAGE mode before any image is loaded
+  _buildDefaultScanPattern(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R = p.cloudRadius
+
+    for (let i = 0; i < p.pointCount; i++) {
+      // 3D Lissajous figure — 7 and 11 loops (coprime for dense coverage)
+      const t = (i / p.pointCount) * Math.PI * 2 * 7
+      const u = (i / p.pointCount) * Math.PI * 2 * 11
+
+      const wx = Math.sin(t) * R * 0.8
+      const wy = Math.sin(u) * R * 0.5
+      const wz = Math.cos(t * 1.3) * R * 0.8
+
+      const ns = this.noise.fbm3(wx * p.noiseScale, wy * p.noiseScale, wz * p.noiseScale, 3)
+      positions[i * 3]     = wx + ns * p.noiseStrength * 3
+      positions[i * 3 + 1] = wy + ns * p.noiseStrength * 3
+      positions[i * 3 + 2] = wz + ns * p.noiseStrength * 3
+
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+
+      const t01 = (Math.sin(t) + 1) * 0.5
+      const c = dimColor.clone().lerp(baseColor, t01)
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+  }
+
+  // ─── Connections with animated pulse ──────────────────────────────────────
 
   _buildConnections() {
     if (this.lineSegments) {
@@ -284,7 +530,10 @@ export class PointCloud {
       this.lineSegments.geometry.dispose()
       this.lineSegments.material.dispose()
       this.lineSegments = null
+      this._lineUniforms = null
     }
+
+    this._adjacency = null
 
     if (!this.params.connectionsEnabled) {
       this.edgeCount = 0
@@ -297,6 +546,13 @@ export class PointCloud {
     const maxDist2 = p.connectionDist * p.connectionDist
 
     const linePositions = []
+    const edgeTs        = []   // 0.0 at edge start, 1.0 at edge end
+    const edgeIds       = []   // unique float index per edge pair
+
+    // Build adjacency list simultaneously
+    const adjacency = Array.from({ length: n }, () => [])
+
+    let edgeIndex = 0
 
     for (let i = 0; i < n; i++) {
       const ix = pos[i * 3], iy = pos[i * 3 + 1], iz = pos[i * 3 + 2]
@@ -306,29 +562,44 @@ export class PointCloud {
         const dz = pos[j * 3 + 2] - iz
         if (dx * dx + dy * dy + dz * dz < maxDist2) {
           linePositions.push(ix, iy, iz, pos[j*3], pos[j*3+1], pos[j*3+2])
+          edgeTs.push(0.0, 1.0)
+          edgeIds.push(edgeIndex, edgeIndex)
+          adjacency[i].push(j)
+          adjacency[j].push(i)
+          edgeIndex++
         }
       }
     }
 
-    this.edgeCount = linePositions.length / 6
+    this.edgeCount  = edgeIndex
+    this._adjacency = adjacency
 
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(linePositions), 3))
+    geo.setAttribute('aEdgeT',   new THREE.BufferAttribute(new Float32Array(edgeTs), 1))
+    geo.setAttribute('aEdgeId',  new THREE.BufferAttribute(new Float32Array(edgeIds), 1))
 
-    const mat = new THREE.LineBasicMaterial({
-      color: 0x00ffe0,
-      transparent: true,
-      opacity: p.lineOpacity,
-      depthWrite: false,
+    const theme = COLOR_THEMES[p.colorTheme] || COLOR_THEMES.cityscan
+    this._lineUniforms = {
+      uTime:    { value: 0 },
+      uOpacity: { value: p.lineOpacity },
+      uColor:   { value: new THREE.Color(theme.base) },
+    }
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms:       this._lineUniforms,
+      vertexShader:   LINE_VERT,
+      fragmentShader: LINE_FRAG,
+      transparent:    true,
+      depthWrite:     false,
     })
 
     this.lineSegments = new THREE.LineSegments(geo, mat)
     this.scene.add(this.lineSegments)
   }
 
-  // ─── Per-frame update ───────────────────────────────────────────────────
+  // ─── Per-frame update ─────────────────────────────────────────────────────
 
-  /** Called every frame. time is elapsed seconds. */
   update(time) {
     const p   = this.params
     const pos  = this.pointsMesh.geometry.attributes.position
@@ -358,6 +629,10 @@ export class PointCloud {
 
     if (this.lineSegments && p.connectionsEnabled) {
       this._updateConnectionPositions(arr)
+      // Advance pulse time
+      if (this._lineUniforms) {
+        this._lineUniforms.uTime.value = time
+      }
     }
   }
 
@@ -389,9 +664,8 @@ export class PointCloud {
     this.lineSegments.geometry.attributes.position.needsUpdate = true
   }
 
-  // ─── Hover ──────────────────────────────────────────────────────────────
+  // ─── Hover with 3-hop cascade ─────────────────────────────────────────────
 
-  /** Update hovered point highlight. index = -1 to clear. */
   setHovered(index) {
     if (this.hoveredIndex === index) return
     this.hoveredIndex = index
@@ -399,34 +673,49 @@ export class PointCloud {
     const colors = this.pointsMesh.geometry.attributes.color
     const arr    = colors.array
     const n      = this.pointCount
+    const p      = this.params
+    const theme  = COLOR_THEMES[p.colorTheme] || COLOR_THEMES.cityscan
 
-    const baseColor  = new THREE.Color(0x00ffe0)
-    const dimColor   = new THREE.Color(0x004d45)
-    const hoverColor = new THREE.Color(0xffffff)
-    const connColor  = new THREE.Color(0x80fff0)
+    const hoverColor = new THREE.Color(theme.hover)
+    const hop1Color  = new THREE.Color(theme.conn)
+    const hop2Color  = new THREE.Color(theme.conn).lerp(new THREE.Color(theme.dim), 0.45)
+    const hop3Color  = new THREE.Color(theme.conn).lerp(new THREE.Color(theme.dim), 0.72)
+    const restColor  = new THREE.Color(theme.dim).lerp(new THREE.Color(theme.base), 0.08)
+    const baseColor  = new THREE.Color(theme.base).lerp(new THREE.Color(theme.dim), 0.5)
 
-    const connectedSet = new Set()
-    if (index >= 0 && this.params.connectionsEnabled) {
-      const pos      = this.pointsMesh.geometry.attributes.position.array
-      const maxDist2 = this.params.connectionDist * this.params.connectionDist
-      const ix = pos[index * 3], iy = pos[index * 3 + 1], iz = pos[index * 3 + 2]
-      for (let j = 0; j < n; j++) {
-        if (j === index) continue
-        const dx = pos[j * 3] - ix
-        const dy = pos[j * 3 + 1] - iy
-        const dz = pos[j * 3 + 2] - iz
-        if (dx*dx + dy*dy + dz*dz < maxDist2) connectedSet.add(j)
+    // BFS up to 3 hops using adjacency list
+    // hopMap: pointIndex → hop distance (1, 2, or 3)
+    const hopMap = new Map()
+
+    if (index >= 0 && p.connectionsEnabled && this._adjacency) {
+      const bfs = (seeds, hop) => {
+        const next = []
+        for (const seed of seeds) {
+          for (const nb of this._adjacency[seed]) {
+            if (nb !== index && !hopMap.has(nb)) {
+              hopMap.set(nb, hop)
+              next.push(nb)
+            }
+          }
+        }
+        return next
       }
+      const h1 = bfs([index], 1)
+      const h2 = bfs(h1, 2)
+      bfs(h2, 3)
     }
 
     for (let i = 0; i < n; i++) {
       let c
       if (i === index) {
         c = hoverColor
-      } else if (connectedSet.has(i)) {
-        c = connColor
+      } else if (hopMap.has(i)) {
+        const hop = hopMap.get(i)
+        if      (hop === 1) c = hop1Color
+        else if (hop === 2) c = hop2Color
+        else                c = hop3Color
       } else {
-        c = baseColor.clone().lerp(dimColor, 0.5)
+        c = index >= 0 ? restColor : baseColor
       }
       arr[i * 3]     = c.r
       arr[i * 3 + 1] = c.g
@@ -436,9 +725,8 @@ export class PointCloud {
     colors.needsUpdate = true
   }
 
-  // ─── Live param updates ─────────────────────────────────────────────────
+  // ─── Live param updates ───────────────────────────────────────────────────
 
-  /** Update the renderer's physical half-height for correct size attenuation. */
   setRendererScale(scale) {
     this._rendererScale = scale
     if (this.pointsMesh) {
@@ -446,7 +734,6 @@ export class PointCloud {
     }
   }
 
-  /** Sync a single param without full rebuild. */
   applyParam(key, value) {
     this.params[key] = value
     switch (key) {
@@ -454,12 +741,20 @@ export class PointCloud {
         this.pointsMesh.material.uniforms.uSize.value = value
         break
       case 'lineOpacity':
-        if (this.lineSegments) this.lineSegments.material.opacity = value
+        if (this._lineUniforms) this._lineUniforms.uOpacity.value = value
         break
       case 'connectionDist':
       case 'connectionsEnabled':
         this._buildConnections()
         break
+    }
+  }
+
+  applyTheme(themeName) {
+    this.params.colorTheme = themeName
+    const theme = COLOR_THEMES[themeName] || COLOR_THEMES.cityscan
+    if (this._lineUniforms) {
+      this._lineUniforms.uColor.value.setHex(theme.base)
     }
   }
 
@@ -479,7 +774,9 @@ export class PointCloud {
       this.lineSegments.geometry.dispose()
       this.lineSegments.material.dispose()
       this.lineSegments = null
+      this._lineUniforms = null
     }
+    this._adjacency = null
   }
 
   get stats() {

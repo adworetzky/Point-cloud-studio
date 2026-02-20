@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { PointCloud } from './pointCloud.js'
+import { PointCloud, COLOR_THEMES } from './pointCloud.js'
 import { initUI } from './ui.js'
 
 // ─── Scene setup ───────────────────────────────────────────────────────────
@@ -45,7 +45,8 @@ addGrid()
 
 const params = {
   seed: 42,
-  cloudStyle: 'organic',   // 'organic' | 'structural'
+  cloudStyle: 'organic',    // 'organic' | 'structural' | 'image'
+  colorTheme: 'cityscan',   // 'cityscan' | 'cosmic' | 'bio'
   pointCount: 800,
   cloudRadius: 30,
   noiseScale: 0.35,
@@ -58,6 +59,11 @@ const params = {
   driftEnabled: true,
   driftSpeed: 0.08,
   driftAmp: 1.2,
+  // Image-driven mode
+  imageData:    null,        // Uint8ClampedArray | null
+  imageWidth:   0,
+  imageHeight:  0,
+  imageMapMode: 'height',   // 'height' | 'density'
 }
 
 // ─── Point cloud ──────────────────────────────────────────────────────────
@@ -146,7 +152,14 @@ initUI(params, {
   onRebuild: rebuildCloud,
   onParamChange: (key, value) => {
     params[key] = value
-    cloud.applyParam(key, value)
+    if (key === 'colorTheme') {
+      const theme = COLOR_THEMES[value] || COLOR_THEMES.cityscan
+      renderer.setClearColor(theme.bg, 1)
+      scene.fog.color.setHex(theme.fog)
+      cloud.applyTheme(value)
+    } else {
+      cloud.applyParam(key, value)
+    }
     updateStats()
   },
   onScreenshot: () => {
