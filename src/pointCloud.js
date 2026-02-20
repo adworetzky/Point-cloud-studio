@@ -61,41 +61,20 @@ const POINT_FRAG = `
   }
 `
 
-// ─── Edge pulse shader ───────────────────────────────────────────────────────
+// ─── Edge shader ─────────────────────────────────────────────────────────────
 
 const LINE_VERT = `
-  attribute float aEdgeT;
-  attribute float aEdgeId;
-  varying float vEdgeT;
-  varying float vEdgeId;
-
   void main() {
-    vEdgeT  = aEdgeT;
-    vEdgeId = aEdgeId;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `
 
 const LINE_FRAG = `
-  uniform float uTime;
   uniform float uOpacity;
   uniform vec3  uColor;
-  varying float vEdgeT;
-  varying float vEdgeId;
 
   void main() {
-    // Stagger pulse phase per edge using golden ratio
-    float phase = fract(uTime * 0.35 + vEdgeId * 0.618033988);
-
-    // Narrow Gaussian pulse traveling t=0 → t=1
-    float dist  = abs(vEdgeT - phase);
-    dist = min(dist, 1.0 - dist);           // wrap at ends
-    float pulse = exp(-dist * dist * 140.0);
-
-    // Base line + pulse highlight
-    vec3  col = uColor * (uOpacity + pulse * 0.9);
-    float a   = uOpacity + pulse * 0.7;
-    gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
+    gl_FragColor = vec4(uColor * uOpacity, uOpacity);
   }
 `
 
@@ -546,8 +525,6 @@ export class PointCloud {
     const maxDist2 = p.connectionDist * p.connectionDist
 
     const linePositions = []
-    const edgeTs        = []   // 0.0 at edge start, 1.0 at edge end
-    const edgeIds       = []   // unique float index per edge pair
 
     // Build adjacency list simultaneously
     const adjacency = Array.from({ length: n }, () => [])
@@ -562,8 +539,6 @@ export class PointCloud {
         const dz = pos[j * 3 + 2] - iz
         if (dx * dx + dy * dy + dz * dz < maxDist2) {
           linePositions.push(ix, iy, iz, pos[j*3], pos[j*3+1], pos[j*3+2])
-          edgeTs.push(0.0, 1.0)
-          edgeIds.push(edgeIndex, edgeIndex)
           adjacency[i].push(j)
           adjacency[j].push(i)
           edgeIndex++
@@ -576,12 +551,9 @@ export class PointCloud {
 
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(linePositions), 3))
-    geo.setAttribute('aEdgeT',   new THREE.BufferAttribute(new Float32Array(edgeTs), 1))
-    geo.setAttribute('aEdgeId',  new THREE.BufferAttribute(new Float32Array(edgeIds), 1))
 
     const theme = COLOR_THEMES[p.colorTheme] || COLOR_THEMES.cityscan
     this._lineUniforms = {
-      uTime:    { value: 0 },
       uOpacity: { value: p.lineOpacity },
       uColor:   { value: new THREE.Color(theme.base) },
     }
@@ -629,10 +601,6 @@ export class PointCloud {
 
     if (this.lineSegments && p.connectionsEnabled) {
       this._updateConnectionPositions(arr)
-      // Advance pulse time
-      if (this._lineUniforms) {
-        this._lineUniforms.uTime.value = time
-      }
     }
   }
 
