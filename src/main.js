@@ -104,8 +104,9 @@ function doRaycast() {
 // ─── Resize ───────────────────────────────────────────────────────────────
 
 function resize() {
+  const isMobile = window.innerWidth <= 768
   const sidebar = document.getElementById('sidebar')
-  const sw = sidebar ? sidebar.offsetWidth : 280
+  const sw = (!isMobile && sidebar) ? sidebar.offsetWidth : 0
   const w = window.innerWidth - sw
   const h = window.innerHeight
   renderer.setSize(w, h)
@@ -155,6 +156,16 @@ initUI(params, {
 })
 
 updateStats()
+
+// ─── Mobile panel toggle ──────────────────────────────────────────────────
+
+const panelToggle = document.getElementById('panel-toggle')
+const sidebarEl   = document.getElementById('sidebar')
+
+panelToggle?.addEventListener('click', () => {
+  const isOpen = sidebarEl.classList.toggle('panel-open')
+  panelToggle.textContent = isOpen ? '×' : '≡'
+})
 
 // ─── Animation loop ───────────────────────────────────────────────────────
 

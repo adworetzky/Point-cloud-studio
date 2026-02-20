@@ -394,3 +394,126 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); }
+
+/* ─── Mobile panel toggle button ────────────────────────────────────────── */
+
+#panel-toggle {
+  display: none;
+}
+
+.hint-mobile { display: none; }
+
+/* ─── Mobile responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .hint-desktop { display: none; }
+  .hint-mobile  { display: inline; }
+
+  #panel-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 20px;
+    right: 16px;
+    z-index: 200;
+    width: 44px;
+    height: 44px;
+    background: var(--bg-panel);
+    border: 1px solid var(--accent-dim);
+    color: var(--accent);
+    font-family: var(--font);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 0 16px rgba(0,255,224,0.25);
+    letter-spacing: 0;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  #panel-toggle:active {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  /* Canvas fills the full viewport */
+  #canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw !important;
+    height: 100vh !important;
+  }
+
+  /* Sidebar becomes a bottom sheet */
+  #sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    min-width: unset;
+    height: auto;
+    max-height: 72vh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    transform: translateY(100%);
+    transition: transform 0.22s ease;
+    z-index: 100;
+  }
+
+  #sidebar.panel-open {
+    transform: translateY(0);
+  }
+
+  #sidebar-body {
+    max-height: calc(72vh - 80px);
+  }
+
+  /* Larger touch targets for sliders */
+  input[type="range"] {
+    height: 4px;
+    touch-action: pan-x;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .control-row {
+    margin-bottom: 14px;
+  }
+
+  .control-row label {
+    font-size: 10px;
+  }
+
+  .val {
+    font-size: 11px;
+    min-width: 38px;
+  }
+
+  .section-label {
+    font-size: 10px;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  .btn {
+    min-height: 38px;
+    padding: 10px 10px;
+  }
+
+  .toggle-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+}
