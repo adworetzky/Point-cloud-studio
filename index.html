@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>POINT CLOUD STUDIO</title>
-  <script type="module" crossorigin src="/Point-cloud-studio/assets/index-BHqENt7c.js"></script>
+  <script type="module" crossorigin src="/Point-cloud-studio/assets/index-VjwHPP4L.js"></script>
   <link rel="stylesheet" crossorigin href="/Point-cloud-studio/assets/index-BiMGurRz.css">
 </head>
 <body>
@@ -48,6 +48,16 @@
             <div class="mode-group">
               <button class="btn mode-btn mode-active" id="mode-organic">ORGANIC</button>
               <button class="btn mode-btn" id="mode-structural">STRUCTURAL</button>
+              <button class="btn mode-btn" id="mode-image">IMAGE</button>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <label>COLOR THEME</label>
+            <div class="mode-group">
+              <button class="btn mode-btn mode-active" id="theme-cityscan">CITY</button>
+              <button class="btn mode-btn" id="theme-cosmic">COSMIC</button>
+              <button class="btn mode-btn" id="theme-bio">BIO</button>
             </div>
           </div>
 
@@ -86,8 +96,33 @@
           <div class="control-row">
             <label>POINT SIZE</label>
             <div class="input-row">
-              <input type="range" id="pointSize" min="0.5" max="8" step="0.1" value="2.0" />
+              <input type="range" id="pointSize" min="0.1" max="8" step="0.05" value="2.0" />
               <span class="val" id="pointSize-val">2.0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Image source controls (shown only when IMAGE mode active) -->
+        <div id="image-controls" style="display:none">
+          <div class="divider"></div>
+          <div class="section">
+            <div class="section-label">// IMAGE SOURCE</div>
+
+            <div class="control-row">
+              <label>UPLOAD IMAGE</label>
+              <div class="input-row">
+                <input type="file" id="imageUpload" accept="image/*" style="display:none" />
+                <button id="btn-image-upload" class="btn btn-secondary" style="flex:1">&#9651; LOAD FILE</button>
+                <span class="val" id="image-filename" style="font-size:8px;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span>
+              </div>
+            </div>
+
+            <div class="control-row">
+              <label>MAP MODE</label>
+              <div class="mode-group">
+                <button class="btn mode-btn mode-active" id="mapmode-height">HEIGHT</button>
+                <button class="btn mode-btn" id="mapmode-density">DENSITY</button>
+              </div>
             </div>
           </div>
         </div>
