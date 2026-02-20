@@ -350,6 +350,27 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
   font-size: 9px;
 }
 
+/* ─── Mode selector (CLOUD STYLE) ──────────────────────────────────────── */
+
+.mode-group {
+  display: flex;
+  gap: 4px;
+}
+
+.mode-btn {
+  flex: 1;
+  font-size: 9px;
+  padding: 5px 4px;
+  letter-spacing: 0.08em;
+}
+
+.mode-active {
+  background: rgba(0, 255, 224, 0.08);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 8px rgba(0, 255, 224, 0.12);
+}
+
 /* ─── Footer ────────────────────────────────────────────────────────────── */
 
 #sidebar-footer {

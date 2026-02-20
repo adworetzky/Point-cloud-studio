@@ -45,6 +45,7 @@ addGrid()
 
 const params = {
   seed: 42,
+  cloudStyle: 'organic',   // 'organic' | 'structural'
   pointCount: 800,
   cloudRadius: 30,
   noiseScale: 0.35,
@@ -112,6 +113,8 @@ function resize() {
   renderer.setSize(w, h)
   camera.aspect = w / h
   camera.updateProjectionMatrix()
+  // Keep shader size-attenuation in sync with physical canvas height
+  cloud.setRendererScale(renderer.domElement.height / 2)
 }
 window.addEventListener('resize', resize)
 resize()
@@ -126,6 +129,7 @@ const statFps = document.getElementById('stat-fps')
 function rebuildCloud() {
   cloud._disposeAll()
   cloud = new PointCloud(scene, { ...params })
+  cloud.setRendererScale(renderer.domElement.height / 2)
   updateStats()
 }
 
