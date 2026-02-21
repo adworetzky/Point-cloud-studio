@@ -57,23 +57,30 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
 
   // ─── Cloud style selector ───────────────────────────────────────────────
 
-  const organicBtn    = document.getElementById('mode-organic')
-  const structuralBtn = document.getElementById('mode-structural')
-  const imageBtn      = document.getElementById('mode-image')
   const imageControls = document.getElementById('image-controls')
+
+  const allStyleBtns = [
+    ['mode-organic',    'organic'],
+    ['mode-structural', 'structural'],
+    ['mode-image',      'image'],
+    ['mode-crystal',    'crystal'],
+    ['mode-terrain',    'terrain'],
+    ['mode-fractal',    'fractal'],
+    ['mode-galaxy',     'galaxy'],
+  ].map(([id, style]) => [document.getElementById(id), style])
 
   function setCloudStyle(style) {
     params.cloudStyle = style
-    organicBtn?.classList.toggle('mode-active',    style === 'organic')
-    structuralBtn?.classList.toggle('mode-active', style === 'structural')
-    imageBtn?.classList.toggle('mode-active',      style === 'image')
+    for (const [btn, s] of allStyleBtns) {
+      btn?.classList.toggle('mode-active', s === style)
+    }
     if (imageControls) imageControls.style.display = style === 'image' ? 'block' : 'none'
     onRebuild()
   }
 
-  organicBtn?.addEventListener('click',    () => setCloudStyle('organic'))
-  structuralBtn?.addEventListener('click', () => setCloudStyle('structural'))
-  imageBtn?.addEventListener('click',      () => setCloudStyle('image'))
+  for (const [btn, style] of allStyleBtns) {
+    btn?.addEventListener('click', () => setCloudStyle(style))
+  }
 
   // ─── Image upload ────────────────────────────────────────────────────────
 

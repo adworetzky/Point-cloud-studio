@@ -134,6 +134,14 @@ export class PointCloud {
       this._buildStructural(positions, colors, this.driftOffsets, srnd, p)
     } else if (p.cloudStyle === 'image') {
       this._buildImageDriven(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'crystal') {
+      this._buildCrystal(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'terrain') {
+      this._buildTerrain(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'fractal') {
+      this._buildFractal(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'galaxy') {
+      this._buildGalaxy(positions, colors, this.driftOffsets, srnd, p)
     } else {
       this._buildOrganic(positions, colors, this.driftOffsets, srnd, p)
     }
@@ -495,6 +503,248 @@ export class PointCloud {
 
       const t01 = (Math.sin(t) + 1) * 0.5
       const c = dimColor.clone().lerp(baseColor, t01)
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+  }
+
+  // ─── Crystal lattice (BCC) cloud ──────────────────────────────────────────
+
+  _buildCrystal(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R = p.cloudRadius
+    const N = p.pointCount
+
+    // BCC lattice constant: sized so ~2× N sites land inside the sphere.
+    // N_BCC_in_sphere ≈ 2 × (4/3)πR³ / a³  →  a = R × (8π/3N)^(1/3) × 0.78
+    const a    = R * Math.pow(8 * Math.PI / (3 * N), 1 / 3) * 0.78
+    const iMax = Math.ceil(R / a) + 1
+    const R2   = R * R
+
+    // Collect all BCC lattice sites within the sphere
+    const lpx = [], lpy = [], lpz = []
+    for (let ix = -iMax; ix <= iMax; ix++) {
+      for (let iy = -iMax; iy <= iMax; iy++) {
+        for (let iz = -iMax; iz <= iMax; iz++) {
+          for (let b = 0; b < 2; b++) {
+            const x = (ix + b * 0.5) * a
+            const y = (iy + b * 0.5) * a
+            const z = (iz + b * 0.5) * a
+            if (x * x + y * y + z * z <= R2) {
+              lpx.push(x); lpy.push(y); lpz.push(z)
+            }
+          }
+        }
+      }
+    }
+
+    const nL = lpx.length
+    // Seeded Fisher-Yates shuffle — pick N random sites without repetition
+    const idx = Array.from({ length: nL }, (_, i) => i)
+    for (let i = nL - 1; i > 0; i--) {
+      const j = Math.floor(srnd() * (i + 1))
+      const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp
+    }
+
+    for (let i = 0; i < N; i++) {
+      const k  = idx[i % nL]
+      const lx = lpx[k], ly = lpy[k], lz = lpz[k]
+
+      // noiseStrength controls lattice disorder: 0 = perfect crystal, 1 = shattered
+      const ns = this.noise.fbm3(
+        lx * p.noiseScale + 7.3,
+        ly * p.noiseScale + 7.3,
+        lz * p.noiseScale + 7.3,
+        3
+      ) * p.noiseStrength * a * 0.5
+
+      positions[i * 3]     = lx + ns
+      positions[i * 3 + 1] = ly + ns * 0.7
+      positions[i * 3 + 2] = lz + ns
+
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+
+      // Color: radial shell fade + horizontal crystal-plane brightness pulse
+      const dist       = Math.sqrt(lx * lx + ly * ly + lz * lz) / R
+      const planePulse = 0.5 + 0.5 * Math.cos((ly / a) * Math.PI * 2)
+      const brightness = 0.08 + dist * 0.35 + planePulse * 0.57
+      const c = dimColor.clone().lerp(baseColor, Math.min(1, brightness))
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+  }
+
+  // ─── Terrain heightfield scan ───────────────────────────────────────────
+
+  _buildTerrain(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R         = p.cloudRadius
+    const numStrata = 5
+
+    for (let i = 0; i < p.pointCount; i++) {
+      const fx = (srnd() * 2 - 1) * R
+      const fz = (srnd() * 2 - 1) * R
+
+      // FBM height — noiseScale drives terrain frequency, noiseStrength drives relief
+      const rawH  = this.noise.fbm3(fx * p.noiseScale, 0, fz * p.noiseScale, 5)
+      const surfY = rawH * R * (0.30 + p.noiseStrength * 0.55)
+
+      const roll = srnd()
+      let wy, brightness
+
+      if (roll < 0.62) {
+        // Surface point — tight cluster around height field
+        wy         = surfY + (srnd() - 0.5) * R * 0.018
+        brightness = 0.45 + Math.max(0, rawH) * 0.55
+      } else if (roll < 0.83) {
+        // Geological strata — horizontal bands below the surface
+        const si      = Math.floor(srnd() * numStrata)
+        const strataY = -(si + 0.5) / numStrata * R * 0.65
+        // Never let strata poke above the surface at this XZ column
+        wy         = Math.min(strataY, surfY - R * 0.015)
+        brightness = 0.08 + (numStrata - 1 - si) / (numStrata - 1) * 0.32
+      } else {
+        // Subsurface scatter — random depth beneath the surface
+        wy         = surfY - srnd() * R * 0.45
+        brightness = 0.02 + srnd() * 0.10
+      }
+
+      positions[i * 3]     = fx
+      positions[i * 3 + 1] = wy
+      positions[i * 3 + 2] = fz
+
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+
+      const c = dimColor.clone().lerp(baseColor, Math.max(0, Math.min(1, brightness)))
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+  }
+
+  // ─── IFS fractal — Sierpinski tetrahedron via chaos game ──────────────────
+
+  _buildFractal(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R = p.cloudRadius * 0.72
+
+    // Regular tetrahedron vertices at circumradius R
+    const V = [
+      [  0,                         R,                       0 ],
+      [  R * Math.sqrt(8 / 9),     -R / 3,                   0 ],
+      [ -R * Math.sqrt(2 / 9),     -R / 3,  R * Math.sqrt(2 / 3) ],
+      [ -R * Math.sqrt(2 / 9),     -R / 3, -R * Math.sqrt(2 / 3) ],
+    ]
+
+    // Chaos game warmup: 25 steps not recorded, so initial transient decays
+    let cx = 0, cy = R * 0.25, cz = 0
+    for (let w = 0; w < 25; w++) {
+      const vi = Math.floor(srnd() * 4)
+      cx = (cx + V[vi][0]) * 0.5
+      cy = (cy + V[vi][1]) * 0.5
+      cz = (cz + V[vi][2]) * 0.5
+    }
+
+    // Each vertex branch gets its own brightness — reveals 4-level self-similarity
+    const vtxBrightness = [0.95, 0.65, 0.42, 0.22]
+
+    for (let i = 0; i < p.pointCount; i++) {
+      const vi = Math.floor(srnd() * 4)
+      cx = (cx + V[vi][0]) * 0.5
+      cy = (cy + V[vi][1]) * 0.5
+      cz = (cz + V[vi][2]) * 0.5
+
+      // noiseStrength blurs the fractal — 0 = crisp Sierpinski, 1 = cloud-like
+      const ns = this.noise.fbm3(
+        cx * p.noiseScale, cy * p.noiseScale, cz * p.noiseScale, 3
+      ) * p.noiseStrength * R * 0.14
+
+      positions[i * 3]     = cx + ns
+      positions[i * 3 + 1] = cy + ns * 0.8
+      positions[i * 3 + 2] = cz + ns
+
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+
+      const c = dimColor.clone().lerp(baseColor, vtxBrightness[vi])
+      colors[i * 3]     = c.r
+      colors[i * 3 + 1] = c.g
+      colors[i * 3 + 2] = c.b
+    }
+  }
+
+  // ─── Galaxy / nebula cloud ─────────────────────────────────────────────────
+
+  _buildGalaxy(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R        = p.cloudRadius
+    const numArms  = 3
+    const tightness = 1.15   // logarithmic spiral winding
+
+    for (let i = 0; i < p.pointCount; i++) {
+      const roll = srnd()
+      let px, py, pz, brightness
+
+      if (roll < 0.15) {
+        // ── Galactic core bulge ──────────────────────────────────────────
+        const theta = Math.acos(2 * srnd() - 1)
+        const phi   = srnd() * Math.PI * 2
+        const r     = Math.pow(srnd(), 1.7) * R * 0.25
+        px = r * Math.sin(theta) * Math.cos(phi)
+        py = r * Math.sin(theta) * Math.sin(phi) * 0.42
+        pz = r * Math.cos(theta)
+        brightness = 0.50 + (1 - r / (R * 0.25)) * 0.50
+
+      } else if (roll < 0.85) {
+        // ── Logarithmic spiral arm ────────────────────────────────────────
+        const armIdx  = Math.floor(srnd() * numArms)
+        const armBase = (armIdx / numArms) * Math.PI * 2
+        // Power-law radius: intermediate distances most common
+        const r = (Math.pow(srnd(), 0.55) * 0.88 + 0.05) * R
+        // Logarithmic spiral angle — winding increases inward
+        const spiralAngle = armBase + tightness * Math.log(r / R * 8 + 1)
+        const angSpread   = 0.10 + (r / R) * 0.10
+        const dAngle      = (srnd() * 2 - 1) * angSpread
+        px = r * Math.cos(spiralAngle + dAngle)
+        pz = r * Math.sin(spiralAngle + dAngle)
+        // Very thin disc, slightly thicker near core
+        py = (srnd() * 2 - 1) * R * 0.035 * (1.2 - (r / R) * 0.85)
+
+        // Arm turbulence — noiseStrength drives density wave ripple
+        const ns = this.noise.fbm3(
+          px * p.noiseScale, 0, pz * p.noiseScale, 3
+        ) * p.noiseStrength * R * 0.07
+        px += ns; pz += ns * 0.9
+
+        brightness = 0.20 + (1 - r / R) * 0.68
+
+      } else {
+        // ── Stellar halo ─────────────────────────────────────────────────
+        const theta = Math.acos(2 * srnd() - 1)
+        const phi   = srnd() * Math.PI * 2
+        const r     = Math.pow(srnd(), 0.45) * R
+        px = r * Math.sin(theta) * Math.cos(phi)
+        py = r * Math.sin(theta) * Math.sin(phi) * 0.38
+        pz = r * Math.cos(theta)
+        brightness = 0.02 + srnd() * 0.11
+      }
+
+      positions[i * 3]     = px
+      positions[i * 3 + 1] = py
+      positions[i * 3 + 2] = pz
+
+      driftOffsets[i * 3]     = srnd() * 100
+      driftOffsets[i * 3 + 1] = srnd() * 100
+      driftOffsets[i * 3 + 2] = srnd() * 100
+
+      const c = dimColor.clone().lerp(baseColor, Math.max(0, Math.min(1, brightness)))
       colors[i * 3]     = c.r
       colors[i * 3 + 1] = c.g
       colors[i * 3 + 2] = c.b
