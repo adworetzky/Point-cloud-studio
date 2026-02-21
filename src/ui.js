@@ -65,13 +65,16 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot, onShare
   }
 
   const allStyleBtns = [
-    ['mode-organic',    'organic'],
-    ['mode-structural', 'structural'],
-    ['mode-image',      'image'],
-    ['mode-crystal',    'crystal'],
-    ['mode-terrain',    'terrain'],
-    ['mode-fractal',    'fractal'],
-    ['mode-galaxy',     'galaxy'],
+    ['mode-organic',           'organic'],
+    ['mode-structural',        'structural'],
+    ['mode-image',             'image'],
+    ['mode-crystal',           'crystal'],
+    ['mode-terrain',           'terrain'],
+    ['mode-fractal',           'fractal'],
+    ['mode-galaxy',            'galaxy'],
+    ['mode-reactiondiffusion', 'reactiondiffusion'],
+    ['mode-fluid',             'fluid'],
+    ['mode-lsystem',           'lsystem'],
   ].map(([id, style]) => [document.getElementById(id), style])
 
   function setCloudStyle(style) {

@@ -170,6 +170,12 @@ export class PointCloud {
       this._buildFractal(positions, colors, this.driftOffsets, srnd, p)
     } else if (p.cloudStyle === 'galaxy') {
       this._buildGalaxy(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'reactiondiffusion') {
+      this._buildReactionDiffusion(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'fluid') {
+      this._buildFluid(positions, colors, this.driftOffsets, srnd, p)
+    } else if (p.cloudStyle === 'lsystem') {
+      this._buildLSystem(positions, colors, this.driftOffsets, srnd, p)
     } else {
       this._buildOrganic(positions, colors, this.driftOffsets, srnd, p)
     }
@@ -776,6 +782,303 @@ export class PointCloud {
       colors[i * 3]     = c.r
       colors[i * 3 + 1] = c.g
       colors[i * 3 + 2] = c.b
+    }
+  }
+
+  // ─── Reaction-diffusion (Gray-Scott) cloud ────────────────────────────────
+
+  _buildReactionDiffusion(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R = p.cloudRadius
+
+    // ── Gray-Scott simulation on a 64×64 toroidal grid ──────────────────────
+    const G  = 64
+    const N  = G * G
+    const U  = new Float32Array(N).fill(1.0)
+    const V  = new Float32Array(N).fill(0.0)
+    const Un = new Float32Array(N)
+    const Vn = new Float32Array(N)
+
+    // Seed V with small random blobs
+    const nSeeds = 4 + Math.floor(srnd() * 6)
+    for (let s = 0; s < nSeeds; s++) {
+      const sx = Math.floor(srnd() * G)
+      const sy = Math.floor(srnd() * G)
+      const sr = 1 + Math.floor(srnd() * 3)
+      for (let dy = -sr; dy <= sr; dy++) {
+        for (let dx = -sr; dx <= sr; dx++) {
+          if (dx * dx + dy * dy > sr * sr) continue
+          const gi = ((sy + dy + G) % G) * G + (sx + dx + G) % G
+          V[gi] = 0.25 + srnd() * 0.05
+          U[gi] = 0.50
+        }
+      }
+    }
+
+    // f/k combo chosen by seed — each combo produces distinct morphology
+    const combos = [
+      [0.037, 0.063],  // scattered spots
+      [0.055, 0.062],  // labyrinthine worms
+      [0.025, 0.060],  // bubbles / cells
+      [0.030, 0.057],  // mitosis rings
+      [0.040, 0.060],  // worm blobs
+      [0.046, 0.063],  // coral growth
+    ]
+    const [f, k] = combos[Math.floor(srnd() * combos.length)]
+    const Du = 0.2097, Dv = 0.105, dt = 1.0
+
+    for (let it = 0; it < 1500; it++) {
+      for (let y = 0; y < G; y++) {
+        for (let x = 0; x < G; x++) {
+          const i  = y * G + x
+          const u  = U[i], v = V[i]
+          const xp = (x + 1) % G, xm = (x - 1 + G) % G
+          const yp = (y + 1) % G, ym = (y - 1 + G) % G
+          const lapU = U[y*G+xp] + U[y*G+xm] + U[yp*G+x] + U[ym*G+x] - 4*u
+          const lapV = V[y*G+xp] + V[y*G+xm] + V[yp*G+x] + V[ym*G+x] - 4*v
+          const uvv  = u * v * v
+          Un[i] = Math.max(0, Math.min(1, u + (Du*lapU - uvv + f*(1-u)) * dt))
+          Vn[i] = Math.max(0, Math.min(1, v + (Dv*lapV + uvv - (f+k)*v) * dt))
+        }
+      }
+      U.set(Un); V.set(Vn)
+    }
+
+    // Normalise V to [0,1]
+    let vMin = 1, vMax = 0
+    for (let i = 0; i < N; i++) {
+      if (V[i] < vMin) vMin = V[i]
+      if (V[i] > vMax) vMax = V[i]
+    }
+    const vRange = Math.max(1e-4, vMax - vMin)
+
+    // Scatter points — denser in high-V (activator) regions
+    const maxAttempts = p.pointCount * 30
+    let placed = 0, attempts = 0
+    while (placed < p.pointCount && attempts < maxAttempts) {
+      attempts++
+      const u = srnd(), v = srnd()
+      const gx = Math.min(G - 1, Math.floor(u * G))
+      const gy = Math.min(G - 1, Math.floor(v * G))
+      const vVal = (V[gy * G + gx] - vMin) / vRange
+      if (srnd() > Math.max(0.04, vVal)) continue
+
+      const wx = (u - 0.5) * R * 2
+      const wz = (v - 0.5) * R * 2
+      // Height from activator concentration — organic undulating surface
+      const wy = (vVal - 0.3) * R * 0.5 * p.noiseStrength
+      const ns = this.noise.fbm3(wx * p.noiseScale, wy, wz * p.noiseScale, 2)
+        * p.noiseStrength * 0.7
+
+      const i = placed
+      positions[i*3]     = wx + ns
+      positions[i*3 + 1] = wy + ns * 0.4
+      positions[i*3 + 2] = wz + ns
+
+      driftOffsets[i*3]     = srnd() * 100
+      driftOffsets[i*3 + 1] = srnd() * 100
+      driftOffsets[i*3 + 2] = srnd() * 100
+
+      const c = dimColor.clone().lerp(baseColor, 0.15 + vVal * 0.85)
+      colors[i*3]     = c.r
+      colors[i*3 + 1] = c.g
+      colors[i*3 + 2] = c.b
+      placed++
+    }
+
+    // Fill any unfilled slots with sparse background scatter
+    for (let i = placed; i < p.pointCount; i++) {
+      positions[i*3]     = (srnd() - 0.5) * R * 2
+      positions[i*3 + 1] = (srnd() - 0.5) * R * 0.2
+      positions[i*3 + 2] = (srnd() - 0.5) * R * 2
+      driftOffsets[i*3]     = srnd() * 100
+      driftOffsets[i*3 + 1] = srnd() * 100
+      driftOffsets[i*3 + 2] = srnd() * 100
+      colors[i*3]     = dimColor.r
+      colors[i*3 + 1] = dimColor.g
+      colors[i*3 + 2] = dimColor.b
+    }
+  }
+
+  // ─── Fluid streamlines (noise-driven flow field) ────────────────────────
+
+  _buildFluid(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R  = p.cloudRadius
+    const ns = p.noiseScale
+
+    // Three FBM channels give a pseudo-curl velocity field
+    const noise = this.noise
+    function velocity(x, y, z) {
+      return [
+        noise.fbm3(x*ns,       y*ns + 100, z*ns,       3),
+        noise.fbm3(x*ns + 100, y*ns,       z*ns + 200, 3),
+        noise.fbm3(x*ns + 200, y*ns + 300, z*ns,       3),
+      ]
+    }
+
+    const numLines     = Math.max(20, Math.ceil(p.pointCount / 20))
+    const stepsPerLine = Math.ceil(p.pointCount / numLines)
+    const stepSize     = R * 0.07
+
+    let placed = 0
+    for (let l = 0; l < numLines && placed < p.pointCount; l++) {
+      // Seed inside sphere with power-law radius (denser toward center)
+      const theta = Math.acos(2 * srnd() - 1)
+      const phi   = srnd() * Math.PI * 2
+      const r     = Math.pow(srnd(), 0.6) * R * 0.85
+      let x = r * Math.sin(theta) * Math.cos(phi)
+      let y = r * Math.sin(theta) * Math.sin(phi)
+      let z = r * Math.cos(theta)
+
+      const lineT = l / numLines  // 0→1 across all lines, used for color
+
+      for (let s = 0; s < stepsPerLine && placed < p.pointCount; s++) {
+        // Noise displacement to store position
+        const jit = this.noise.noise3(x*ns*0.5+50, y*ns*0.5+50, z*ns*0.5+50)
+          * p.noiseStrength * 0.5
+
+        positions[placed*3]     = x + jit
+        positions[placed*3 + 1] = y + jit * 0.6
+        positions[placed*3 + 2] = z + jit
+
+        driftOffsets[placed*3]     = srnd() * 100
+        driftOffsets[placed*3 + 1] = srnd() * 100
+        driftOffsets[placed*3 + 2] = srnd() * 100
+
+        // Color: brighter near start of each line, with line-index tint
+        const progress  = s / stepsPerLine
+        const brightness = 0.20 + (1 - progress) * 0.60 + (1 - lineT) * 0.20
+        const c = dimColor.clone().lerp(baseColor, Math.min(1, brightness))
+        colors[placed*3]     = c.r
+        colors[placed*3 + 1] = c.g
+        colors[placed*3 + 2] = c.b
+        placed++
+
+        // Advect: Euler step along velocity field
+        const [vx, vy, vz] = velocity(x, y, z)
+        const vLen = Math.sqrt(vx*vx + vy*vy + vz*vz) + 1e-4
+        x += (vx / vLen) * stepSize
+        y += (vy / vLen) * stepSize
+        z += (vz / vLen) * stepSize
+
+        // Soft sphere boundary — re-seed near center when exiting
+        const dist = Math.sqrt(x*x + y*y + z*z)
+        if (dist > R) {
+          const scale = R / dist * (0.25 + srnd() * 0.40)
+          x *= scale; y *= scale; z *= scale
+        }
+      }
+    }
+  }
+
+  // ─── L-system — recursive 3-D branching tree ─────────────────────────────
+
+  _buildLSystem(positions, colors, driftOffsets, srnd, p) {
+    const { base: baseColor, dim: dimColor } = this._themeColors(p)
+    const R = p.cloudRadius
+
+    const maxDepth   = Math.max(3, Math.min(6, Math.round(Math.log(p.pointCount / 3) / Math.log(3))))
+    const branchRatio = 0.63
+    const baseLen     = R * 0.38
+    // noiseScale drives angle spread: lower = narrow spire, higher = wide canopy
+    const angleSpread = 0.30 + Math.min(1.5, p.noiseScale) * 0.28
+
+    // Flat segment array — 7 values per segment: x0 y0 z0 x1 y1 z1 depth
+    const segArr = []
+
+    // Robustly find two vectors perpendicular to (dx,dy,dz)
+    function getPerp(dx, dy, dz) {
+      const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz)
+      let ux, uy, uz
+      if (ax <= ay && ax <= az) { ux = 1; uy = 0; uz = 0 }
+      else if (ay <= az)        { ux = 0; uy = 1; uz = 0 }
+      else                      { ux = 0; uy = 0; uz = 1 }
+      let px = dy*uz - dz*uy, py = dz*ux - dx*uz, pz = dx*uy - dy*ux
+      const pLen = Math.sqrt(px*px + py*py + pz*pz)
+      px /= pLen; py /= pLen; pz /= pLen
+      const qx = dy*pz - dz*py, qy = dz*px - dx*pz, qz = dx*py - dy*px
+      return [px, py, pz, qx, qy, qz]
+    }
+
+    function growBranch(x, y, z, dx, dy, dz, len, depth) {
+      const x1 = x + dx * len, y1 = y + dy * len, z1 = z + dz * len
+      segArr.push(x, y, z, x1, y1, z1, depth)
+      if (depth === 0) return
+
+      const numChildren = 2 + Math.floor(srnd() * 2)  // 2 or 3
+      const [px, py, pz, qx, qy, qz] = getPerp(dx, dy, dz)
+
+      for (let c = 0; c < numChildren; c++) {
+        const azimuth = (c + srnd() * 0.35) / numChildren * Math.PI * 2
+        const polar   = angleSpread * (0.75 + srnd() * 0.50)
+        const cosP = Math.cos(polar), sinP = Math.sin(polar)
+        const cosA = Math.cos(azimuth), sinA = Math.sin(azimuth)
+        const perpX = cosA * px + sinA * qx
+        const perpY = cosA * py + sinA * qy
+        const perpZ = cosA * pz + sinA * qz
+        const ndx = cosP * dx + sinP * perpX
+        const ndy = cosP * dy + sinP * perpY
+        const ndz = cosP * dz + sinP * perpZ
+        growBranch(x1, y1, z1, ndx, ndy, ndz, len * branchRatio, depth - 1)
+      }
+    }
+
+    growBranch(0, -R * 0.45, 0,  0, 1, 0,  baseLen, maxDepth)
+
+    const nSeg = segArr.length / 7
+
+    // Build cumulative length array for weighted sampling
+    const cumLen = new Float64Array(nSeg)
+    let totalLen = 0
+    for (let s = 0; s < nSeg; s++) {
+      const si  = s * 7
+      const ddx = segArr[si+3] - segArr[si]
+      const ddy = segArr[si+4] - segArr[si+1]
+      const ddz = segArr[si+5] - segArr[si+2]
+      totalLen += Math.sqrt(ddx*ddx + ddy*ddy + ddz*ddz)
+      cumLen[s] = totalLen
+    }
+
+    for (let i = 0; i < p.pointCount; i++) {
+      // Binary-search for segment proportional to length
+      const t = srnd() * totalLen
+      let lo = 0, hi = nSeg - 1
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (cumLen[mid] < t) lo = mid + 1
+        else hi = mid
+      }
+      const si       = lo * 7
+      const segStart = lo > 0 ? cumLen[lo-1] : 0
+      const u        = (t - segStart) / Math.max(1e-9, cumLen[lo] - segStart)
+
+      const x0 = segArr[si], y0 = segArr[si+1], z0 = segArr[si+2]
+      const x1 = segArr[si+3], y1 = segArr[si+4], z1 = segArr[si+5]
+      const depth = segArr[si+6]
+
+      const wx = x0 + (x1-x0) * u
+      const wy = y0 + (y1-y0) * u
+      const wz = z0 + (z1-z0) * u
+
+      // noiseStrength controls branch thickness (scatter around centre-line)
+      const thick = p.noiseStrength * (0.04 + depth / maxDepth * 0.10) * R
+      const ns    = this.noise.fbm3(wx * p.noiseScale, wy * p.noiseScale, wz * p.noiseScale, 3) * thick
+
+      positions[i*3]     = wx + ns
+      positions[i*3 + 1] = wy + ns * 0.55
+      positions[i*3 + 2] = wz + ns
+
+      driftOffsets[i*3]     = srnd() * 100
+      driftOffsets[i*3 + 1] = srnd() * 100
+      driftOffsets[i*3 + 2] = srnd() * 100
+
+      // Bright tips (depth 0), dim trunk (depth maxDepth)
+      const brightness = 0.12 + (1 - depth / maxDepth) * 0.88
+      const c = dimColor.clone().lerp(baseColor, Math.min(1, brightness))
+      colors[i*3]     = c.r
+      colors[i*3 + 1] = c.g
+      colors[i*3 + 2] = c.b
     }
   }
 

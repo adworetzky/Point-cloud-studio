@@ -265,8 +265,9 @@ animate()
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────
 
 const STYLE_KEYS = {
-  '1': 'organic', '2': 'structural', '3': 'image',
-  '4': 'crystal', '5': 'terrain',    '6': 'fractal', '7': 'galaxy',
+  '1': 'organic', '2': 'structural',       '3': 'image',
+  '4': 'crystal', '5': 'terrain',          '6': 'fractal', '7': 'galaxy',
+  '8': 'reactiondiffusion', '9': 'fluid',  '0': 'lsystem',
 }
 
 function toggleShortcuts() {
