@@ -364,6 +364,13 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
   letter-spacing: 0.08em;
 }
 
+/* Dense row (4+ buttons) — tighter text to prevent overflow */
+.mode-group-dense .btn {
+  font-size: 8px;
+  letter-spacing: 0.03em;
+  padding: 5px 2px;
+}
+
 .mode-active {
   background: rgba(0, 255, 224, 0.08);
   border-color: var(--accent);
@@ -507,6 +514,12 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
     height: 20px;
   }
 
+  .mode-group-dense .btn {
+    font-size: 7.5px;
+    padding: 8px 1px;
+    letter-spacing: 0.01em;
+  }
+
   .control-row {
     margin-bottom: 14px;
   }
@@ -537,4 +550,76 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
     width: 16px;
     height: 16px;
   }
+}
+
+/* ─── Keyboard shortcuts overlay ────────────────────────────────────────── */
+
+#shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 10, 8, 0.88);
+  z-index: 400;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(3px);
+}
+
+#shortcuts-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--accent-dim);
+  padding: 20px 24px;
+  min-width: 260px;
+  box-shadow: 0 0 40px rgba(0,255,224,0.10);
+}
+
+.shortcuts-title {
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.22em;
+  margin-bottom: 14px;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 14px;
+  align-items: center;
+}
+
+.shortcuts-grid kbd {
+  display: inline-block;
+  background: var(--bg);
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 9px;
+  padding: 2px 5px;
+  letter-spacing: 0.06em;
+  min-width: 22px;
+  text-align: center;
+  box-shadow: 0 0 6px rgba(0,255,224,0.10);
+}
+
+.shortcuts-grid span {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.10em;
+}
+
+.shortcuts-sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  grid-column: 1 / -1;
+  margin: 3px 0;
+}
+
+.shortcuts-close {
+  margin-top: 14px;
+  font-size: 8px;
+  color: var(--text-muted);
+  text-align: center;
+  letter-spacing: 0.18em;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
 }

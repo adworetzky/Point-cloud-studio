@@ -261,3 +261,51 @@ function animate() {
 }
 
 animate()
+
+// ─── Keyboard shortcuts ───────────────────────────────────────────────────
+
+const STYLE_KEYS = {
+  '1': 'organic', '2': 'structural', '3': 'image',
+  '4': 'crystal', '5': 'terrain',    '6': 'fractal', '7': 'galaxy',
+}
+
+function toggleShortcuts() {
+  const el = document.getElementById('shortcuts-overlay')
+  if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none'
+}
+
+document.getElementById('btn-help')?.addEventListener('click', toggleShortcuts)
+
+document.getElementById('shortcuts-overlay')?.addEventListener('click', e => {
+  if (e.target === e.currentTarget) toggleShortcuts()
+})
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+
+  if (e.key === 'Escape') {
+    const el = document.getElementById('shortcuts-overlay')
+    if (el && el.style.display !== 'none') { el.style.display = 'none'; return }
+  }
+
+  if (e.key === '/' || e.key === '?') {
+    e.preventDefault()
+    toggleShortcuts()
+    return
+  }
+
+  if (STYLE_KEYS[e.key]) {
+    document.getElementById(`mode-${STYLE_KEYS[e.key]}`)?.click()
+    return
+  }
+
+  switch (e.key.toLowerCase()) {
+    case 'r': document.getElementById('btn-regenerate')?.click();       break
+    case 'c': document.getElementById('btn-screenshot')?.click();       break
+    case 'u': document.getElementById('btn-share')?.click();            break
+    case 'p': document.getElementById('autoSpin')?.click();             break
+    case 'n': document.getElementById('connectionsEnabled')?.click();   break
+    case 'd': document.getElementById('driftEnabled')?.click();         break
+  }
+})
