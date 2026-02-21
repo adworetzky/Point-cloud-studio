@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>POINT CLOUD STUDIO</title>
-  <script type="module" crossorigin src="/Point-cloud-studio/assets/index-C2QY2upJ.js"></script>
+  <script type="module" crossorigin src="/Point-cloud-studio/assets/index-DOKXaAT9.js"></script>
   <link rel="stylesheet" crossorigin href="/Point-cloud-studio/assets/index-BiMGurRz.css">
 </head>
 <body>
@@ -65,6 +65,11 @@
               <button class="btn mode-btn" id="theme-cosmic">COSMIC</button>
               <button class="btn mode-btn" id="theme-bio">BIO</button>
             </div>
+            <div class="mode-group" style="margin-top:4px">
+              <button class="btn mode-btn" id="theme-infrared">HEAT</button>
+              <button class="btn mode-btn" id="theme-mono">MONO</button>
+              <button class="btn mode-btn" id="theme-sunset">SUNSET</button>
+            </div>
           </div>
 
           <div class="control-row">
@@ -104,6 +109,34 @@
             <div class="input-row">
               <input type="range" id="pointSize" min="0.1" max="8" step="0.05" value="2.0" />
               <span class="val" id="pointSize-val">2.0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Style-specific options (shown contextually based on active cloud style) -->
+        <div id="style-opts-panel" style="display:none">
+          <div class="divider"></div>
+          <div class="section">
+            <div class="section-label">// STYLE OPTIONS</div>
+
+            <div id="style-opts-galaxy" style="display:none">
+              <div class="control-row">
+                <label>SPIRAL ARMS</label>
+                <div class="input-row">
+                  <input type="range" id="galaxyArms" min="1" max="6" step="1" value="3" />
+                  <span class="val" id="galaxyArms-val">3</span>
+                </div>
+              </div>
+            </div>
+
+            <div id="style-opts-terrain" style="display:none">
+              <div class="control-row">
+                <label>STRATA BANDS</label>
+                <div class="input-row">
+                  <input type="range" id="terrainStrata" min="2" max="10" step="1" value="5" />
+                  <span class="val" id="terrainStrata-val">5</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -174,6 +207,29 @@
 
         <div class="divider"></div>
 
+        <!-- Auto-spin animation -->
+        <div class="section">
+          <div class="section-label">
+            // AUTO-SPIN
+            <label class="toggle-label">
+              <input type="checkbox" id="autoSpin" />
+              <span class="toggle-text" id="autoSpin-text">OFF</span>
+            </label>
+          </div>
+
+          <div id="spin-controls">
+            <div class="control-row">
+              <label>SPIN SPEED</label>
+              <div class="input-row">
+                <input type="range" id="spinSpeed" min="0.05" max="2.0" step="0.05" value="0.4" />
+                <span class="val" id="spinSpeed-val">0.40</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
         <!-- Drift animation -->
         <div class="section">
           <div class="section-label">
@@ -211,6 +267,9 @@
           <div class="btn-group">
             <button id="btn-regenerate" class="btn btn-primary">&#9646; REGENERATE</button>
             <button id="btn-screenshot" class="btn btn-secondary">&#9642; SCREENSHOT</button>
+          </div>
+          <div class="btn-group" style="margin-top:6px">
+            <button id="btn-share" class="btn btn-secondary">&#11208; SHARE URL</button>
           </div>
           <div class="control-row" style="margin-top:10px">
             <label>SEED</label>
