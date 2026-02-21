@@ -1194,31 +1194,6 @@ export class PointCloud {
     }
 
     pos.needsUpdate = true
-
-    if (this.lineSegments && p.connectionsEnabled) {
-      this._updateConnectionPositions(arr)
-    }
-  }
-
-  _updateConnectionPositions(currentPos) {
-    // O(E) update using stored adjacency — topology is fixed to base positions,
-    // only vertex coordinates are refreshed each frame.
-    const lineArr = this.lineSegments.geometry.attributes.position.array
-    let vi = 0
-    const n = this.pointCount
-    for (let i = 0; i < n; i++) {
-      for (const j of this._adjacency[i]) {
-        if (j > i) {
-          lineArr[vi++] = currentPos[i * 3]
-          lineArr[vi++] = currentPos[i * 3 + 1]
-          lineArr[vi++] = currentPos[i * 3 + 2]
-          lineArr[vi++] = currentPos[j * 3]
-          lineArr[vi++] = currentPos[j * 3 + 1]
-          lineArr[vi++] = currentPos[j * 3 + 2]
-        }
-      }
-    }
-    this.lineSegments.geometry.attributes.position.needsUpdate = true
   }
 
   // ─── Hover with 3-hop cascade ─────────────────────────────────────────────
