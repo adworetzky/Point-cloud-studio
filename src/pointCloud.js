@@ -28,6 +28,30 @@ export const COLOR_THEMES = {
     bg:    0x010a04,
     fog:   0x010a04,
   },
+  infrared: {
+    base:  0xff5500,
+    dim:   0x3a0800,
+    hover: 0xffffff,
+    conn:  0xff8844,
+    bg:    0x070100,
+    fog:   0x070100,
+  },
+  mono: {
+    base:  0xd0d0d0,
+    dim:   0x1e1e1e,
+    hover: 0xffffff,
+    conn:  0x909090,
+    bg:    0x040404,
+    fog:   0x040404,
+  },
+  sunset: {
+    base:  0xff6eb4,
+    dim:   0x280a1e,
+    hover: 0xffffff,
+    conn:  0xff99cc,
+    bg:    0x08010a,
+    fog:   0x08010a,
+  },
 }
 
 // ─── Point shader ────────────────────────────────────────────────────────────
@@ -86,6 +110,10 @@ export class PointCloud {
     this.scene = scene
     this.params = params
     this.noise = new PerlinNoise(params.seed)
+
+    // Group holds all meshes — lets external code rotate the whole cloud
+    this.group = new THREE.Group()
+    scene.add(this.group)
 
     // Physical renderer half-height for size attenuation (updated via setRendererScale)
     this._rendererScale = window.innerHeight * Math.min(window.devicePixelRatio, 2) / 2
@@ -166,7 +194,7 @@ export class PointCloud {
     })
 
     this.pointsMesh = new THREE.Points(geo, mat)
-    this.scene.add(this.pointsMesh)
+    this.group.add(this.pointsMesh)
 
     this._buildConnections()
   }
@@ -583,7 +611,7 @@ export class PointCloud {
   _buildTerrain(positions, colors, driftOffsets, srnd, p) {
     const { base: baseColor, dim: dimColor } = this._themeColors(p)
     const R         = p.cloudRadius
-    const numStrata = 5
+    const numStrata = Math.max(2, Math.min(10, Math.round(p.terrainStrata ?? 5)))
 
     for (let i = 0; i < p.pointCount; i++) {
       const fx = (srnd() * 2 - 1) * R
@@ -685,7 +713,7 @@ export class PointCloud {
   _buildGalaxy(positions, colors, driftOffsets, srnd, p) {
     const { base: baseColor, dim: dimColor } = this._themeColors(p)
     const R        = p.cloudRadius
-    const numArms  = 3
+    const numArms  = Math.max(1, Math.min(8, Math.round(p.galaxyArms ?? 3)))
     const tightness = 1.15   // logarithmic spiral winding
 
     for (let i = 0; i < p.pointCount; i++) {
@@ -755,7 +783,7 @@ export class PointCloud {
 
   _buildConnections() {
     if (this.lineSegments) {
-      this.scene.remove(this.lineSegments)
+      this.group.remove(this.lineSegments)
       this.lineSegments.geometry.dispose()
       this.lineSegments.material.dispose()
       this.lineSegments = null
@@ -769,29 +797,44 @@ export class PointCloud {
       return
     }
 
-    const p       = this.params
-    const pos     = this.pointsMesh.geometry.attributes.position.array
-    const n       = this.pointCount
-    const maxDist2 = p.connectionDist * p.connectionDist
+    const p        = this.params
+    const pos      = this.pointsMesh.geometry.attributes.position.array
+    const n        = this.pointCount
+    const maxDist  = p.connectionDist
+    const maxDist2 = maxDist * maxDist
+
+    // Spatial hash grid — O(N) average vs O(N²) brute force
+    const cellSize = maxDist
+    const grid = new Map()
+    for (let i = 0; i < n; i++) {
+      const k = `${Math.floor(pos[i*3]/cellSize)},${Math.floor(pos[i*3+1]/cellSize)},${Math.floor(pos[i*3+2]/cellSize)}`
+      if (!grid.has(k)) grid.set(k, [])
+      grid.get(k).push(i)
+    }
 
     const linePositions = []
-
-    // Build adjacency list simultaneously
-    const adjacency = Array.from({ length: n }, () => [])
-
-    let edgeIndex = 0
+    const adjacency     = Array.from({ length: n }, () => [])
+    let   edgeIndex     = 0
 
     for (let i = 0; i < n; i++) {
-      const ix = pos[i * 3], iy = pos[i * 3 + 1], iz = pos[i * 3 + 2]
-      for (let j = i + 1; j < n; j++) {
-        const dx = pos[j * 3] - ix
-        const dy = pos[j * 3 + 1] - iy
-        const dz = pos[j * 3 + 2] - iz
-        if (dx * dx + dy * dy + dz * dz < maxDist2) {
-          linePositions.push(ix, iy, iz, pos[j*3], pos[j*3+1], pos[j*3+2])
-          adjacency[i].push(j)
-          adjacency[j].push(i)
-          edgeIndex++
+      const ix = pos[i*3], iy = pos[i*3+1], iz = pos[i*3+2]
+      const cx = Math.floor(ix/cellSize), cy = Math.floor(iy/cellSize), cz = Math.floor(iz/cellSize)
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const cell = grid.get(`${cx+dx},${cy+dy},${cz+dz}`)
+            if (!cell) continue
+            for (const j of cell) {
+              if (j <= i) continue
+              const ddx = pos[j*3]-ix, ddy = pos[j*3+1]-iy, ddz = pos[j*3+2]-iz
+              if (ddx*ddx + ddy*ddy + ddz*ddz < maxDist2) {
+                linePositions.push(ix, iy, iz, pos[j*3], pos[j*3+1], pos[j*3+2])
+                adjacency[i].push(j)
+                adjacency[j].push(i)
+                edgeIndex++
+              }
+            }
+          }
         }
       }
     }
@@ -817,7 +860,7 @@ export class PointCloud {
     })
 
     this.lineSegments = new THREE.LineSegments(geo, mat)
-    this.scene.add(this.lineSegments)
+    this.group.add(this.lineSegments)
   }
 
   // ─── Per-frame update ─────────────────────────────────────────────────────
@@ -855,27 +898,20 @@ export class PointCloud {
   }
 
   _updateConnectionPositions(currentPos) {
-    const p        = this.params
-    const n        = this.pointCount
-    const maxDist2 = p.connectionDist * p.connectionDist
-    const lineArr  = this.lineSegments.geometry.attributes.position.array
+    // O(E) update using stored adjacency — topology is fixed to base positions,
+    // only vertex coordinates are refreshed each frame.
+    const lineArr = this.lineSegments.geometry.attributes.position.array
     let vi = 0
-
+    const n = this.pointCount
     for (let i = 0; i < n; i++) {
-      const ix = currentPos[i * 3], iy = currentPos[i * 3 + 1], iz = currentPos[i * 3 + 2]
-      for (let j = i + 1; j < n; j++) {
-        const dx = currentPos[j * 3] - ix
-        const dy = currentPos[j * 3 + 1] - iy
-        const dz = currentPos[j * 3 + 2] - iz
-        if (dx * dx + dy * dy + dz * dz < maxDist2) {
-          if (vi + 5 < lineArr.length) {
-            lineArr[vi++] = ix
-            lineArr[vi++] = iy
-            lineArr[vi++] = iz
-            lineArr[vi++] = currentPos[j * 3]
-            lineArr[vi++] = currentPos[j * 3 + 1]
-            lineArr[vi++] = currentPos[j * 3 + 2]
-          }
+      for (const j of this._adjacency[i]) {
+        if (j > i) {
+          lineArr[vi++] = currentPos[i * 3]
+          lineArr[vi++] = currentPos[i * 3 + 1]
+          lineArr[vi++] = currentPos[i * 3 + 2]
+          lineArr[vi++] = currentPos[j * 3]
+          lineArr[vi++] = currentPos[j * 3 + 1]
+          lineArr[vi++] = currentPos[j * 3 + 2]
         }
       }
     }
@@ -982,19 +1018,25 @@ export class PointCloud {
 
   _disposeAll() {
     if (this.pointsMesh) {
-      this.scene.remove(this.pointsMesh)
+      this.group.remove(this.pointsMesh)
       this.pointsMesh.geometry.dispose()
       this.pointsMesh.material.dispose()
       this.pointsMesh = null
     }
     if (this.lineSegments) {
-      this.scene.remove(this.lineSegments)
+      this.group.remove(this.lineSegments)
       this.lineSegments.geometry.dispose()
       this.lineSegments.material.dispose()
       this.lineSegments = null
       this._lineUniforms = null
     }
     this._adjacency = null
+  }
+
+  // Full teardown including the scene group — call this before replacing the instance
+  dispose() {
+    this._disposeAll()
+    this.scene.remove(this.group)
   }
 
   get stats() {

@@ -2,7 +2,7 @@
  * UI module — wires up all sidebar controls.
  * Calls onRebuild() for heavy param changes, onParamChange(key, val) for lightweight ones.
  */
-export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
+export function initUI(params, { onRebuild, onParamChange, onScreenshot, onShare }) {
 
   // ─── Slider helper ──────────────────────────────────────────────────────
 
@@ -57,7 +57,12 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
 
   // ─── Cloud style selector ───────────────────────────────────────────────
 
-  const imageControls = document.getElementById('image-controls')
+  const imageControls  = document.getElementById('image-controls')
+  const styleOptsPanel = document.getElementById('style-opts-panel')
+  const styleOptsPanels = {
+    galaxy:  document.getElementById('style-opts-galaxy'),
+    terrain: document.getElementById('style-opts-terrain'),
+  }
 
   const allStyleBtns = [
     ['mode-organic',    'organic'],
@@ -75,11 +80,29 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
       btn?.classList.toggle('mode-active', s === style)
     }
     if (imageControls) imageControls.style.display = style === 'image' ? 'block' : 'none'
+    // Show/hide style-specific options
+    const hasOpts = style in styleOptsPanels
+    if (styleOptsPanel) styleOptsPanel.style.display = hasOpts ? '' : 'none'
+    for (const [s, panel] of Object.entries(styleOptsPanels)) {
+      if (panel) panel.style.display = s === style ? '' : 'none'
+    }
     onRebuild()
   }
 
   for (const [btn, style] of allStyleBtns) {
     btn?.addEventListener('click', () => setCloudStyle(style))
+  }
+
+  // Sync button active states + panels for URL-loaded params (no rebuild)
+  {
+    const s = params.cloudStyle
+    for (const [btn, st] of allStyleBtns) btn?.classList.toggle('mode-active', st === s)
+    if (imageControls) imageControls.style.display = s === 'image' ? 'block' : 'none'
+    const hasOpts = s in styleOptsPanels
+    if (styleOptsPanel) styleOptsPanel.style.display = hasOpts ? '' : 'none'
+    for (const [st, panel] of Object.entries(styleOptsPanels)) {
+      if (panel) panel.style.display = st === s ? '' : 'none'
+    }
   }
 
   // ─── Image upload ────────────────────────────────────────────────────────
@@ -140,22 +163,26 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
 
   // ─── Color theme selector ────────────────────────────────────────────────
 
-  const themeCityscan = document.getElementById('theme-cityscan')
-  const themeCosmic   = document.getElementById('theme-cosmic')
-  const themeBio      = document.getElementById('theme-bio')
+  const allThemeBtns = [
+    ['theme-cityscan', 'cityscan'],
+    ['theme-cosmic',   'cosmic'],
+    ['theme-bio',      'bio'],
+    ['theme-infrared', 'infrared'],
+    ['theme-mono',     'mono'],
+    ['theme-sunset',   'sunset'],
+  ].map(([id, theme]) => [document.getElementById(id), theme])
 
   function setTheme(theme) {
     params.colorTheme = theme
-    themeCityscan?.classList.toggle('mode-active', theme === 'cityscan')
-    themeCosmic?.classList.toggle('mode-active',   theme === 'cosmic')
-    themeBio?.classList.toggle('mode-active',      theme === 'bio')
+    for (const [btn, t] of allThemeBtns) btn?.classList.toggle('mode-active', t === theme)
     onParamChange('colorTheme', theme)
     onRebuild()
   }
 
-  themeCityscan?.addEventListener('click', () => setTheme('cityscan'))
-  themeCosmic?.addEventListener('click',   () => setTheme('cosmic'))
-  themeBio?.addEventListener('click',      () => setTheme('bio'))
+  for (const [btn, theme] of allThemeBtns) btn?.addEventListener('click', () => setTheme(theme))
+
+  // Sync active state for URL-loaded theme
+  for (const [btn, t] of allThemeBtns) btn?.classList.toggle('mode-active', t === params.colorTheme)
 
   // ─── Geometry (rebuild on change) ───────────────────────────────────────
 
@@ -210,4 +237,15 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot }) {
   })
 
   document.getElementById('btn-screenshot')?.addEventListener('click', onScreenshot)
+  document.getElementById('btn-share')?.addEventListener('click', onShare)
+
+  // ─── Auto-spin ───────────────────────────────────────────────────────────
+
+  bindToggle('autoSpin', 'autoSpin', 'autoSpin-text', 'ON', 'OFF', false, 'spin-controls')
+  bindSlider('spinSpeed', 'spinSpeed', 2, false)
+
+  // ─── Style-specific options ──────────────────────────────────────────────
+
+  bindSlider('galaxyArms',    'galaxyArms',    0, true)
+  bindSlider('terrainStrata', 'terrainStrata', 0, true)
 }

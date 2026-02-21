@@ -45,8 +45,8 @@ addGrid()
 
 const params = {
   seed: 42,
-  cloudStyle: 'organic',    // 'organic' | 'structural' | 'image'
-  colorTheme: 'cityscan',   // 'cityscan' | 'cosmic' | 'bio'
+  cloudStyle: 'organic',    // 'organic' | 'structural' | 'image' | 'crystal' | 'terrain' | 'fractal' | 'galaxy'
+  colorTheme: 'cityscan',   // 'cityscan' | 'cosmic' | 'bio' | 'infrared' | 'mono' | 'sunset'
   pointCount: 800,
   cloudRadius: 30,
   noiseScale: 0.35,
@@ -59,11 +59,42 @@ const params = {
   driftEnabled: true,
   driftSpeed: 0.08,
   driftAmp: 1.2,
+  // Animation
+  autoSpin:  false,
+  spinSpeed: 0.4,
+  // Style-specific
+  galaxyArms:    3,
+  terrainStrata: 5,
   // Image-driven mode
   imageData:    null,        // Uint8ClampedArray | null
   imageWidth:   0,
   imageHeight:  0,
   imageMapMode: 'height',   // 'height' | 'density'
+}
+
+// ─── URL param sharing ────────────────────────────────────────────────────
+
+const SHAREABLE    = ['seed','cloudStyle','colorTheme','pointCount','cloudRadius',
+  'noiseScale','noiseStrength','pointSize','connectionsEnabled','connectionDist',
+  'lineOpacity','driftEnabled','driftSpeed','driftAmp','imageMapMode',
+  'autoSpin','spinSpeed','galaxyArms','terrainStrata']
+const BOOL_PARAMS  = new Set(['connectionsEnabled','driftEnabled','autoSpin'])
+const STRING_PARAMS = new Set(['cloudStyle','colorTheme','imageMapMode'])
+
+const urlP = new URLSearchParams(window.location.search)
+for (const key of SHAREABLE) {
+  if (!urlP.has(key)) continue
+  const raw = urlP.get(key)
+  if (BOOL_PARAMS.has(key))    params[key] = raw === 'true'
+  else if (STRING_PARAMS.has(key)) params[key] = raw
+  else { const v = parseFloat(raw); if (!isNaN(v)) params[key] = v }
+}
+
+// Apply theme-dependent renderer settings if loaded from URL
+{
+  const theme = COLOR_THEMES[params.colorTheme] || COLOR_THEMES.cityscan
+  renderer.setClearColor(theme.bg, 1)
+  scene.fog.color.setHex(theme.fog)
 }
 
 // ─── Point cloud ──────────────────────────────────────────────────────────
@@ -133,8 +164,10 @@ const statFps = document.getElementById('stat-fps')
 // ─── Rebuild helper ───────────────────────────────────────────────────────
 
 function rebuildCloud() {
-  cloud._disposeAll()
+  const prevRotY = cloud.group.rotation.y   // preserve spin angle across rebuilds
+  cloud.dispose()
   cloud = new PointCloud(scene, { ...params })
+  cloud.group.rotation.y = prevRotY
   cloud.setRendererScale(renderer.domElement.height / 2)
   updateStats()
 }
@@ -163,12 +196,23 @@ initUI(params, {
     updateStats()
   },
   onScreenshot: () => {
-    // Render one clean frame first
     renderer.render(scene, camera)
     const link = document.createElement('a')
     link.download = `pcs_${params.seed}_${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
+  },
+  onShare: () => {
+    const sp = new URLSearchParams()
+    for (const key of SHAREABLE) sp.set(key, String(params[key]))
+    const url = `${location.origin}${location.pathname}?${sp.toString()}`
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('btn-share')
+      if (!btn) return
+      const orig = btn.textContent
+      btn.textContent = '✓ COPIED'
+      setTimeout(() => { btn.textContent = orig }, 1500)
+    }).catch(() => { prompt('Copy this URL:', url) })
   },
 })
 
@@ -187,14 +231,23 @@ panelToggle?.addEventListener('click', () => {
 // ─── Animation loop ───────────────────────────────────────────────────────
 
 const clock = new THREE.Clock()
+let prevTime = 0
 
 function animate() {
   requestAnimationFrame(animate)
 
   const elapsed = clock.getElapsedTime()
+  const dt      = elapsed - prevTime
+  prevTime      = elapsed
+
   controls.update()
   doRaycast()
   cloud.update(elapsed)
+
+  if (params.autoSpin) {
+    cloud.group.rotation.y += params.spinSpeed * dt
+  }
+
   renderer.render(scene, camera)
 
   // FPS
