@@ -299,6 +299,39 @@
 
         <div class="divider"></div>
 
+        <!-- Bloom post-processing -->
+        <div class="section">
+          <div class="section-label">
+            // BLOOM
+            <button id="btn-bloom" class="btn btn-ghost" title="Toggle bloom glow effect">OFF</button>
+          </div>
+          <div id="bloom-controls" style="opacity:0.35">
+            <div class="control-row">
+              <label>STRENGTH</label>
+              <div class="input-row">
+                <input type="range" id="bloomStrength" min="0" max="3" step="0.1" value="0.8" />
+                <span class="val" id="bloomStrength-val">0.8</span>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>RADIUS</label>
+              <div class="input-row">
+                <input type="range" id="bloomRadius" min="0" max="1" step="0.01" value="0.4" />
+                <span class="val" id="bloomRadius-val">0.40</span>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>THRESHOLD</label>
+              <div class="input-row">
+                <input type="range" id="bloomThreshold" min="0" max="1" step="0.01" value="0.2" />
+                <span class="val" id="bloomThreshold-val">0.20</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
         <!-- Actions -->
         <div class="section">
           <div class="section-label">// ACTIONS</div>

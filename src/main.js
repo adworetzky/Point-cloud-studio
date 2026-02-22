@@ -1,5 +1,9 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { PointCloud, COLOR_THEMES } from './pointCloud.js'
 import { initUI } from './ui.js'
 
@@ -18,6 +22,17 @@ renderer.setClearColor(0x020a08, 1)
 
 const scene = new THREE.Scene()
 scene.fog = new THREE.FogExp2(0x020a08, 0.008)
+
+// ─── Post-processing (bloom) ──────────────────────────────────────────────
+
+const renderPass  = new RenderPass(scene, camera)  // camera ref updated in animate
+const bloomPass   = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.4, 0.2)
+const outputPass  = new OutputPass()
+const composer    = new EffectComposer(renderer)
+composer.addPass(renderPass)
+composer.addPass(bloomPass)
+composer.addPass(outputPass)
+let bloomEnabled  = false
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
 camera.position.set(0, 0, 70)
@@ -171,6 +186,7 @@ function resize() {
   orthoCamera.updateProjectionMatrix()
   // Keep shader size-attenuation in sync with physical canvas height
   cloud.setRendererScale(renderer.domElement.height / 2)
+  composer.setSize(w, h)
 }
 
 function toggleOrtho() {
@@ -311,7 +327,12 @@ function animate() {
     cloud.group.rotation.y += params.spinSpeed * dt
   }
 
-  renderer.render(scene, activeCamera)
+  renderPass.camera = activeCamera
+  if (bloomEnabled) {
+    composer.render()
+  } else {
+    renderer.render(scene, activeCamera)
+  }
 
   // FPS
   fpsFrames++
@@ -340,6 +361,36 @@ function toggleShortcuts() {
 
 document.getElementById('btn-help')?.addEventListener('click', toggleShortcuts)
 document.getElementById('btn-ortho')?.addEventListener('click', toggleOrtho)
+
+// Bloom controls
+function setBloom(enabled) {
+  bloomEnabled = enabled
+  const btn = document.getElementById('btn-bloom')
+  if (btn) { btn.classList.toggle('mode-active', enabled); btn.textContent = enabled ? 'ON' : 'OFF' }
+  const ctrls = document.getElementById('bloom-controls')
+  if (ctrls) ctrls.style.opacity = enabled ? '1' : '0.35'
+}
+document.getElementById('btn-bloom')?.addEventListener('click', () => setBloom(!bloomEnabled))
+
+const bloomStrengthEl = document.getElementById('bloomStrength')
+const bloomRadiusEl   = document.getElementById('bloomRadius')
+const bloomThreshEl   = document.getElementById('bloomThreshold')
+
+bloomStrengthEl?.addEventListener('input', () => {
+  bloomPass.strength = parseFloat(bloomStrengthEl.value)
+  const v = document.getElementById('bloomStrength-val')
+  if (v) v.textContent = parseFloat(bloomStrengthEl.value).toFixed(1)
+})
+bloomRadiusEl?.addEventListener('input', () => {
+  bloomPass.radius = parseFloat(bloomRadiusEl.value)
+  const v = document.getElementById('bloomRadius-val')
+  if (v) v.textContent = parseFloat(bloomRadiusEl.value).toFixed(2)
+})
+bloomThreshEl?.addEventListener('input', () => {
+  bloomPass.threshold = parseFloat(bloomThreshEl.value)
+  const v = document.getElementById('bloomThreshold-val')
+  if (v) v.textContent = parseFloat(bloomThreshEl.value).toFixed(2)
+})
 
 // CRT overlay toggle
 function toggleCRT() {
