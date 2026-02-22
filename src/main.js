@@ -347,6 +347,67 @@ panelToggle?.addEventListener('click', () => {
   panelToggle.textContent = isOpen ? '×' : '≡'
 })
 
+// ─── Audio-reactive mode ──────────────────────────────────────────────────
+
+let audioCtx = null, audioAnalyser = null, audioData = null
+let audioEnabled = false
+let _baseDriftAmp = params.driftAmp, _baseDriftSpeed = params.driftSpeed
+
+async function enableAudio() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    audioCtx      = new AudioContext()
+    const source  = audioCtx.createMediaStreamSource(stream)
+    audioAnalyser = audioCtx.createAnalyser()
+    audioAnalyser.fftSize = 64
+    source.connect(audioAnalyser)
+    audioData     = new Uint8Array(audioAnalyser.frequencyBinCount)
+    audioEnabled  = true
+    _baseDriftAmp   = params.driftAmp
+    _baseDriftSpeed = params.driftSpeed
+    const btn = document.getElementById('btn-audio')
+    if (btn) { btn.textContent = '⏹ AUDIO ON'; btn.classList.add('mode-active') }
+  } catch {
+    alert('Microphone access denied or unavailable.')
+  }
+}
+
+function disableAudio() {
+  audioEnabled = false
+  if (audioCtx) { audioCtx.close(); audioCtx = null }
+  audioAnalyser = null; audioData = null
+  params.driftAmp   = _baseDriftAmp
+  params.driftSpeed = _baseDriftSpeed
+  cloud.applyParam('driftAmp', _baseDriftAmp)
+  const btn = document.getElementById('btn-audio')
+  if (btn) { btn.textContent = '▶ AUDIO'; btn.classList.remove('mode-active') }
+}
+
+function tickAudio() {
+  if (!audioEnabled || !audioAnalyser) return
+  audioAnalyser.getByteFrequencyData(audioData)
+  const len  = audioData.length
+  // Bass: first 25% of bins
+  let bass = 0
+  const bassEnd = Math.floor(len * 0.25)
+  for (let i = 0; i < bassEnd; i++) bass += audioData[i]
+  bass = bass / (bassEnd * 255)  // 0–1
+  // Treble: upper 40% of bins
+  let treble = 0
+  const trebStart = Math.floor(len * 0.6)
+  for (let i = trebStart; i < len; i++) treble += audioData[i]
+  treble = treble / ((len - trebStart) * 255)  // 0–1
+
+  // Bass → driftAmp; treble → driftSpeed
+  params.driftAmp   = _baseDriftAmp   * (1 + bass   * 2.5)
+  params.driftSpeed = _baseDriftSpeed * (1 + treble  * 1.5)
+}
+
+document.getElementById('btn-audio')?.addEventListener('click', () => {
+  if (audioEnabled) disableAudio()
+  else enableAudio()
+})
+
 // ─── Animation loop ───────────────────────────────────────────────────────
 
 const clock = new THREE.Clock()
@@ -360,6 +421,7 @@ function animate() {
   prevTime      = elapsed
 
   controls.update()
+  tickAudio()
   updateGravityTarget()
   doRaycast()
   cloud.update(elapsed)
