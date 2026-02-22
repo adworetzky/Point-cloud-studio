@@ -77,6 +77,40 @@
           </div>
 
           <div class="control-row">
+            <label>COLOR MODE</label>
+            <div class="mode-group">
+              <button class="btn mode-btn mode-active" id="colormode-theme">THEME</button>
+              <button class="btn mode-btn"             id="colormode-positional">POSITIONAL</button>
+            </div>
+          </div>
+
+          <div id="hue-controls" style="display:none">
+            <div class="control-row">
+              <label>HUE AXIS</label>
+              <div class="mode-group">
+                <button class="btn mode-btn mode-active" id="hueaxis-y">Y</button>
+                <button class="btn mode-btn"             id="hueaxis-radial">RADIAL</button>
+                <button class="btn mode-btn"             id="hueaxis-x">X</button>
+                <button class="btn mode-btn"             id="hueaxis-z">Z</button>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>HUE RANGE</label>
+              <div class="input-row">
+                <input type="range" id="hueRange" min="0" max="360" step="1" value="120" />
+                <span class="val" id="hueRange-val">120°</span>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>HUE OFFSET</label>
+              <div class="input-row">
+                <input type="range" id="hueOffset" min="0" max="360" step="1" value="0" />
+                <span class="val" id="hueOffset-val">0°</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-row">
             <label>POINT COUNT</label>
             <div class="input-row">
               <input type="range" id="pointCount" min="50" max="3000" step="50" value="800" />

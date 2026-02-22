@@ -251,4 +251,59 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot, onShare
 
   bindSlider('galaxyArms',    'galaxyArms',    0, true)
   bindSlider('terrainStrata', 'terrainStrata', 0, true)
+
+  // ─── Positional hue shift ────────────────────────────────────────────────
+
+  const hueControls = document.getElementById('hue-controls')
+
+  const colorModeBtns = [
+    ['colormode-theme',      'theme'],
+    ['colormode-positional', 'positional'],
+  ].map(([id, mode]) => [document.getElementById(id), mode])
+
+  function setColorMode(mode) {
+    params.colorMode = mode
+    for (const [btn, m] of colorModeBtns) btn?.classList.toggle('mode-active', m === mode)
+    if (hueControls) hueControls.style.display = mode === 'positional' ? '' : 'none'
+    onRebuild()
+  }
+
+  for (const [btn, mode] of colorModeBtns) btn?.addEventListener('click', () => setColorMode(mode))
+
+  // Sync on load
+  for (const [btn, m] of colorModeBtns) btn?.classList.toggle('mode-active', m === params.colorMode)
+  if (hueControls) hueControls.style.display = params.colorMode === 'positional' ? '' : 'none'
+
+  const hueAxisBtns = [
+    ['hueaxis-y',      'y'],
+    ['hueaxis-radial', 'radial'],
+    ['hueaxis-x',      'x'],
+    ['hueaxis-z',      'z'],
+  ].map(([id, axis]) => [document.getElementById(id), axis])
+
+  function setHueAxis(axis) {
+    params.hueAxis = axis
+    for (const [btn, a] of hueAxisBtns) btn?.classList.toggle('mode-active', a === axis)
+    onRebuild()
+  }
+
+  for (const [btn, axis] of hueAxisBtns) btn?.addEventListener('click', () => setHueAxis(axis))
+  for (const [btn, a] of hueAxisBtns) btn?.classList.toggle('mode-active', a === params.hueAxis)
+
+  // hueRange and hueOffset with degree suffix
+  ;['hueRange', 'hueOffset'].forEach(id => {
+    const input = document.getElementById(id)
+    const display = document.getElementById(id + '-val')
+    if (!input) return
+    input.value = params[id]
+    if (display) display.textContent = params[id] + '°'
+    let timer = null
+    input.addEventListener('input', () => {
+      const val = parseInt(input.value, 10)
+      params[id] = val
+      if (display) display.textContent = val + '°'
+      clearTimeout(timer)
+      timer = setTimeout(onRebuild, 120)
+    })
+  })
 }

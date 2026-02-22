@@ -65,6 +65,11 @@ const params = {
   // Style-specific
   galaxyArms:    3,
   terrainStrata: 5,
+  // Positional hue shift
+  colorMode:  'theme',  // 'theme' | 'positional'
+  hueAxis:    'y',      // 'y' | 'radial' | 'x' | 'z'
+  hueRange:   120,      // degrees of hue sweep (0–360)
+  hueOffset:  0,        // base hue rotation (0–360)
   // Image-driven mode
   imageData:    null,        // Uint8ClampedArray | null
   imageWidth:   0,
@@ -77,9 +82,10 @@ const params = {
 const SHAREABLE    = ['seed','cloudStyle','colorTheme','pointCount','cloudRadius',
   'noiseScale','noiseStrength','pointSize','connectionsEnabled','connectionDist',
   'lineOpacity','driftEnabled','driftSpeed','driftAmp','imageMapMode',
-  'autoSpin','spinSpeed','galaxyArms','terrainStrata']
+  'autoSpin','spinSpeed','galaxyArms','terrainStrata',
+  'colorMode','hueAxis','hueRange','hueOffset']
 const BOOL_PARAMS  = new Set(['connectionsEnabled','driftEnabled','autoSpin'])
-const STRING_PARAMS = new Set(['cloudStyle','colorTheme','imageMapMode'])
+const STRING_PARAMS = new Set(['cloudStyle','colorTheme','imageMapMode','colorMode','hueAxis'])
 
 const urlP = new URLSearchParams(window.location.search)
 for (const key of SHAREABLE) {

@@ -180,6 +180,11 @@ export class PointCloud {
       this._buildOrganic(positions, colors, this.driftOffsets, srnd, p)
     }
 
+    // Positional hue shift — universal post-pass across all styles
+    if (p.colorMode === 'positional') {
+      this._applyPositionalHue(positions, colors, p)
+    }
+
     this.basePositions = positions.slice()
 
     // Points geometry
@@ -203,6 +208,43 @@ export class PointCloud {
     this.group.add(this.pointsMesh)
 
     this._buildConnections()
+  }
+
+  // ─── Positional hue shift post-pass ────────────────────────────────────────
+
+  _applyPositionalHue(positions, colors, p) {
+    const n = p.pointCount
+    let min = Infinity, max = -Infinity
+    const values = new Float32Array(n)
+
+    for (let i = 0; i < n; i++) {
+      let v
+      if (p.hueAxis === 'radial') {
+        const x = positions[i*3], y = positions[i*3+1], z = positions[i*3+2]
+        v = Math.sqrt(x*x + y*y + z*z)
+      } else {
+        const axisIdx = p.hueAxis === 'x' ? 0 : p.hueAxis === 'z' ? 2 : 1
+        v = positions[i*3 + axisIdx]
+      }
+      values[i] = v
+      if (v < min) min = v
+      if (v > max) max = v
+    }
+
+    const span = (max - min) || 1
+    const hsl = { h: 0, s: 0, l: 0 }
+    const tmp = new THREE.Color()
+
+    for (let i = 0; i < n; i++) {
+      const t = (values[i] - min) / span
+      tmp.setRGB(colors[i*3], colors[i*3+1], colors[i*3+2])
+      tmp.getHSL(hsl)
+      hsl.h = ((hsl.h + p.hueOffset / 360 + t * p.hueRange / 360) % 1 + 1) % 1
+      tmp.setHSL(hsl.h, hsl.s, hsl.l)
+      colors[i*3]   = tmp.r
+      colors[i*3+1] = tmp.g
+      colors[i*3+2] = tmp.b
+    }
   }
 
   // ─── Theme helper ──────────────────────────────────────────────────────────
