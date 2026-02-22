@@ -17,8 +17,8 @@ Status: `[ ]` pending · `[~]` in progress · `[x]` done
 
 ## Interaction Upgrades
 
-- [ ] **Gravity cursor** — Hold `G` to attract nearby points toward mouse; release repels. Direct per-frame position perturbation, no rebuild.
-- [ ] **Explode on click** — Click a point to trigger a radial burst; points animate outward then spring back (simple damped physics, no rebuild).
+- [x] **Gravity cursor** — Left-mouse-hold attracts nearby points toward mouse; springs back on release. Mouse ray intersects plane at origin; world point converted to cloud local space.
+- [x] **Explode on click** — Click a point to trigger a radial burst with damped spring-back physics. `[X]` key explodes from center.
 - [ ] **Lasso select** — Draw a freehand screen-space region to select a point subset; isolate or highlight them.
 - [ ] **Point annotation** — Click to pin a persistent world-space label at a point (`PT 0042 — [1.2, −4.5, 7.8]`), overlaid in screen space via CSS3D or canvas overlay.
 
@@ -26,7 +26,7 @@ Status: `[ ]` pending · `[~]` in progress · `[x]` done
 
 ## Animation / Audio
 
-- [ ] **Audio-reactive mode** — Web Audio API mic FFT drives `driftAmp` or `noiseStrength` live. Bass bin → displacement magnitude; treble → color brightness pulse. Toggle `[A]`.
+- [x] **Audio-reactive mode** — Web Audio API mic FFT drives `driftAmp` (bass bins) and `driftSpeed` (treble bins) live. Toggle button enables mic. Restores original params on disable.
 - [ ] **Morph interpolation** — Generate rest positions for two different styles, GLSL-lerp over N seconds. `[M]` key triggers morph; duration slider in UI.
 - [ ] **Particle trails** — Each drifting point leaves a fading ghost trail stored in a ring buffer of N past positions, rendered as alpha-faded line segments behind it.
 - [ ] **Animation recorder** — `MediaRecorder` captures the canvas as a WebM clip. Record/stop button in Actions section; auto-downloads on stop.
@@ -35,34 +35,33 @@ Status: `[ ]` pending · `[~]` in progress · `[x]` done
 
 ## Visual / Rendering
 
-- [ ] **Bloom post-processing** — Three.js `UnrealBloomPass` via `EffectComposer`. Single toggle + strength/radius sliders. High aesthetic impact for the cyberpunk look.
+- [x] **Bloom post-processing** — `UnrealBloomPass` via `EffectComposer`. Toggle + strength/radius/threshold sliders. Routes through composer when enabled.
 - [ ] **Depth of field** — `BokehPass`: blurs points far from a focal plane. Focus distance controlled by a slider or by holding `F` + scrolling.
 - [ ] **Color-by-velocity** — During drift, points whose displacement exceeds a threshold shift toward white; slow-moving ones dim. Live, no rebuild. Works on top of any color mode.
-- [ ] **Scanline / CRT overlay** — CSS or shader post-pass with horizontal scan bands and slight barrel distortion. Single toggle in the UI.
-- [ ] **Orthographic camera mode** — Toggle perspective ↔ orthographic; useful for blueprint-style elevation views. `[O]` key.
+- [x] **Scanline / CRT overlay** — CSS overlay with 4px horizontal scan bands + radial vignette. Toggle via `[K]` / SCANLINE button. Zero GPU cost.
+- [x] **Orthographic camera mode** — Toggle perspective ↔ orthographic via `[O]` / ORTHO button. Frustum auto-sized to match view distance.
 - [ ] **Delaunay surface** — Compute 3D Delaunay triangulation and toggle between point cloud and mesh wireframe (or solid with low alpha). `[T]` key.
 
 ---
 
-## Positional Hue Shift  *(new — drafted below)*
+## Positional Hue Shift  *(implemented)*
 
-- [ ] **Dynamic positional coloring** — Post-build CPU pass rotates point hue based on a chosen position axis. Works across all cloud styles universally. See full spec below.
+- [x] **Dynamic positional coloring** — Post-build CPU pass rotates point hue based on chosen axis (Y/radial/X/Z). `hueRange` (0–360°) and `hueOffset` sliders. URL-shareable. Works across all 10 cloud styles.
 
 ---
 
 ## Export / Sharing
 
-- [ ] **PLY / XYZ export** — Download current point positions as a real point cloud file (PLY binary or ASCII XYZ). Importable in Blender, CloudCompare, MeshLab. One button in Actions.
+- [x] **PLY / XYZ export** — Exports current point positions as ASCII PLY. Importable in Blender, CloudCompare, MeshLab.
 - [ ] **SVG export** — Orthographic projection of current view → vector SVG with `z`-depth ordering. Good for printing/plotting.
-- [ ] **Embed snippet** — "Copy iframe" button generates a self-contained URL with all params for embedding the scene on any webpage.
-- [ ] **Named presets** — Save up to 8 named configurations in `localStorage`; load from a preset picker in the sidebar. Includes export/import as JSON.
+- [x] **Embed snippet** — "EMBED" button generates `<iframe src="…">` tag with all params encoded, copies to clipboard.
+- [x] **Named presets** — Save up to 12 named configurations in `localStorage`. Load re-syncs all sliders/toggles. Persistent across sessions.
 
 ---
 
 ## UX / Polish
 
 - [ ] **Undo / redo** — Stack of param snapshots (max depth 20); `Ctrl+Z` / `Ctrl+Y` walks through changes without rebuild if possible, with rebuild if geometry params changed.
-- [ ] **VR mode** — WebXR `ImmersiveVR` session; Three.js renderer flag + controller ray interactors. `[V]` key or button.
 - [ ] **Navigation cube** — Corner gizmo showing orientation axes (X/Y/Z faces); click a face to snap camera to top/front/side view.
 - [ ] **Split compare** — Two canvases side by side with independent params, shared color theme. Drag the divider.
 
