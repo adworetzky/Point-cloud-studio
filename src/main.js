@@ -308,6 +308,69 @@ initUI(params, {
     link.click()
     URL.revokeObjectURL(link.href)
   },
+  onExportSTL: () => {
+    const pos   = cloud.pointsMesh.geometry.attributes.position.array
+    const n     = cloud.pointCount
+    // Half-size of each cube, scaled to cloud density
+    const r     = Math.max(0.15, params.cloudRadius / Math.pow(n, 1 / 3) * 0.30)
+    const nTris = n * 12  // 12 triangles per axis-aligned cube
+    const buf   = new ArrayBuffer(80 + 4 + nTris * 50)
+    const view  = new DataView(buf)
+
+    // 80-byte ASCII header
+    const hdr = `PCS STL seed=${params.seed} r=${r.toFixed(3)}`
+    for (let i = 0; i < Math.min(hdr.length, 80); i++) view.setUint8(i, hdr.charCodeAt(i))
+    view.setUint32(80, nTris, true)
+
+    let off = 84
+    function writeTri(nx, ny, nz, ax, ay, az, bx, by, bz, cx, cy, cz) {
+      view.setFloat32(off, nx, true); off += 4
+      view.setFloat32(off, ny, true); off += 4
+      view.setFloat32(off, nz, true); off += 4
+      view.setFloat32(off, ax, true); off += 4
+      view.setFloat32(off, ay, true); off += 4
+      view.setFloat32(off, az, true); off += 4
+      view.setFloat32(off, bx, true); off += 4
+      view.setFloat32(off, by, true); off += 4
+      view.setFloat32(off, bz, true); off += 4
+      view.setFloat32(off, cx, true); off += 4
+      view.setFloat32(off, cy, true); off += 4
+      view.setFloat32(off, cz, true); off += 4
+      view.setUint16(off, 0, true);  off += 2
+    }
+
+    for (let i = 0; i < n; i++) {
+      const cx = pos[i*3], cy = pos[i*3+1], cz = pos[i*3+2]
+      const x0 = cx-r, x1 = cx+r
+      const y0 = cy-r, y1 = cy+r
+      const z0 = cz-r, z1 = cz+r
+      // -Z face  (normal 0, 0,-1)  verts: v0,v2,v1 then v0,v3,v2
+      writeTri( 0, 0,-1,  x0,y0,z0,  x1,y1,z0,  x1,y0,z0)
+      writeTri( 0, 0,-1,  x0,y0,z0,  x0,y1,z0,  x1,y1,z0)
+      // +Z face  (normal 0, 0,+1)  v4,v5,v6 then v4,v6,v7
+      writeTri( 0, 0,+1,  x0,y0,z1,  x1,y0,z1,  x1,y1,z1)
+      writeTri( 0, 0,+1,  x0,y0,z1,  x1,y1,z1,  x0,y1,z1)
+      // +X face  (normal+1, 0, 0)  v1,v2,v6 then v1,v6,v5
+      writeTri(+1, 0, 0,  x1,y0,z0,  x1,y1,z0,  x1,y1,z1)
+      writeTri(+1, 0, 0,  x1,y0,z0,  x1,y1,z1,  x1,y0,z1)
+      // -X face  (normal-1, 0, 0)  v0,v4,v3 then v3,v4,v7
+      writeTri(-1, 0, 0,  x0,y0,z0,  x0,y0,z1,  x0,y1,z0)
+      writeTri(-1, 0, 0,  x0,y1,z0,  x0,y0,z1,  x0,y1,z1)
+      // -Y face  (normal 0,-1, 0)  v0,v1,v5 then v0,v5,v4
+      writeTri( 0,-1, 0,  x0,y0,z0,  x1,y0,z0,  x1,y0,z1)
+      writeTri( 0,-1, 0,  x0,y0,z0,  x1,y0,z1,  x0,y0,z1)
+      // +Y face  (normal 0,+1, 0)  v2,v3,v7 then v2,v7,v6
+      writeTri( 0,+1, 0,  x1,y1,z0,  x0,y1,z0,  x0,y1,z1)
+      writeTri( 0,+1, 0,  x1,y1,z0,  x0,y1,z1,  x1,y1,z1)
+    }
+
+    const blob = new Blob([buf], { type: 'application/octet-stream' })
+    const link = document.createElement('a')
+    link.download = `pcs_${params.seed}.stl`
+    link.href = URL.createObjectURL(blob)
+    link.click()
+    URL.revokeObjectURL(link.href)
+  },
   onEmbed: () => {
     const sp = new URLSearchParams()
     for (const key of SHAREABLE) sp.set(key, String(params[key]))
