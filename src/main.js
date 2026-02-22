@@ -148,6 +148,46 @@ canvas.addEventListener('mouseleave', () => {
   mouse.set(-9999, -9999)
   cloud.setHovered(-1)
   tooltip.style.display = 'none'
+  cloud.gravityTarget = null
+})
+
+// ─── Gravity cursor ───────────────────────────────────────────────────────
+
+let gravityActive = false
+const gravityPlane     = new THREE.Plane()
+const gravityIntersect = new THREE.Vector3()
+
+canvas.addEventListener('mousedown', e => { if (e.button === 0) gravityActive = true })
+canvas.addEventListener('mouseup',   e => { if (e.button === 0) { gravityActive = false; cloud.gravityTarget = null } })
+
+function updateGravityTarget() {
+  if (!gravityActive) return
+  gravityPlane.setFromNormalAndCoplanarPoint(
+    activeCamera.position.clone().normalize(),
+    new THREE.Vector3(0, 0, 0)
+  )
+  raycaster.setFromCamera(mouse, activeCamera)
+  if (raycaster.ray.intersectPlane(gravityPlane, gravityIntersect)) {
+    cloud.gravityTarget = cloud.group.worldToLocal(gravityIntersect.clone())
+  }
+}
+
+// ─── Click-to-explode ─────────────────────────────────────────────────────
+
+canvas.addEventListener('click', e => {
+  if (!cloud.pointsMesh) return
+  // Only explode on quick clicks (not after drag)
+  const rect = canvas.getBoundingClientRect()
+  const clickMouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  )
+  raycaster.setFromCamera(clickMouse, activeCamera)
+  const hits = raycaster.intersectObject(cloud.pointsMesh)
+  if (hits.length > 0) {
+    const localPt = cloud.group.worldToLocal(hits[0].point.clone())
+    cloud.explode(localPt)
+  }
 })
 
 function doRaycast() {
@@ -320,6 +360,7 @@ function animate() {
   prevTime      = elapsed
 
   controls.update()
+  updateGravityTarget()
   doRaycast()
   cloud.update(elapsed)
 
@@ -435,5 +476,6 @@ document.addEventListener('keydown', e => {
     case 'd': document.getElementById('driftEnabled')?.click();         break
     case 'o': toggleOrtho();                                            break
     case 'k': toggleCRT();                                              break
+    case 'x': cloud.explode(new THREE.Vector3(0, 0, 0));               break
   }
 })

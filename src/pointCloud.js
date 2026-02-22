@@ -137,6 +137,14 @@ export class PointCloud {
     // Hover
     this.hoveredIndex = -1
 
+    // Gravity cursor (set from main.js, local-space THREE.Vector3 or null)
+    this.gravityTarget  = null
+    this.gravityPerturb = null   // Float32Array(n*3) — position displacement
+
+    // Explode-on-click (spring physics, local-space displacements)
+    this.explodeDisp = null   // Float32Array(n*3) or null when settled
+    this.explodeVels = null   // Float32Array(n*3) or null when settled
+
     this._build()
   }
 
@@ -185,7 +193,10 @@ export class PointCloud {
       this._applyPositionalHue(positions, colors, p)
     }
 
-    this.basePositions = positions.slice()
+    this.basePositions  = positions.slice()
+    this.gravityPerturb = new Float32Array(p.pointCount * 3)
+    this.explodeDisp    = null
+    this.explodeVels    = null
 
     // Points geometry
     const geo = new THREE.BufferGeometry()
@@ -1235,7 +1246,82 @@ export class PointCloud {
       }
     }
 
+    // ── Gravity cursor ─────────────────────────────────────────────────────
+    if (this.gravityPerturb) {
+      const gd = this.gravityPerturb
+      const R2 = this.params.cloudRadius * this.params.cloudRadius
+
+      if (this.gravityTarget) {
+        const tx = this.gravityTarget.x, ty = this.gravityTarget.y, tz = this.gravityTarget.z
+        for (let i = 0; i < this.pointCount; i++) {
+          const bx = this.basePositions[i*3], by = this.basePositions[i*3+1], bz = this.basePositions[i*3+2]
+          const dx = tx - bx, dy = ty - by, dz = tz - bz
+          // Only affect points within cloudRadius of the target
+          const inRange = (dx*dx + dy*dy + dz*dz) < R2 ? 1.0 : 0.0
+          gd[i*3]   += (dx * 0.38 * inRange - gd[i*3])   * 0.10
+          gd[i*3+1] += (dy * 0.38 * inRange - gd[i*3+1]) * 0.10
+          gd[i*3+2] += (dz * 0.38 * inRange - gd[i*3+2]) * 0.10
+        }
+      } else {
+        // Spring back to zero when mouse released
+        for (let i = 0; i < this.pointCount * 3; i++) gd[i] *= 0.92
+      }
+
+      for (let i = 0; i < this.pointCount; i++) {
+        arr[i*3]   += gd[i*3]
+        arr[i*3+1] += gd[i*3+1]
+        arr[i*3+2] += gd[i*3+2]
+      }
+    }
+
+    // ── Explode spring physics ─────────────────────────────────────────────
+    if (this.explodeDisp) {
+      let active = false
+      const ed = this.explodeDisp, ev = this.explodeVels
+      const stiffness = 0.055, damping = 0.87
+
+      for (let i = 0; i < this.pointCount; i++) {
+        // Spring restoring force toward zero displacement
+        ev[i*3]   = (ev[i*3]   - ed[i*3]   * stiffness) * damping
+        ev[i*3+1] = (ev[i*3+1] - ed[i*3+1] * stiffness) * damping
+        ev[i*3+2] = (ev[i*3+2] - ed[i*3+2] * stiffness) * damping
+
+        ed[i*3]   += ev[i*3]
+        ed[i*3+1] += ev[i*3+1]
+        ed[i*3+2] += ev[i*3+2]
+
+        arr[i*3]   += ed[i*3]
+        arr[i*3+1] += ed[i*3+1]
+        arr[i*3+2] += ed[i*3+2]
+
+        if (Math.abs(ed[i*3]) + Math.abs(ed[i*3+1]) + Math.abs(ed[i*3+2]) > 0.05) active = true
+      }
+
+      if (!active) { this.explodeDisp = null; this.explodeVels = null }
+    }
+
     pos.needsUpdate = true
+  }
+
+  // ─── Explode from a local-space point ─────────────────────────────────────
+
+  explode(fromLocalPoint) {
+    const n = this.pointCount
+    if (!this.explodeDisp) {
+      this.explodeDisp = new Float32Array(n * 3)
+      this.explodeVels = new Float32Array(n * 3)
+    }
+    const arr = this.pointsMesh.geometry.attributes.position.array
+    for (let i = 0; i < n; i++) {
+      const dx = arr[i*3]   - fromLocalPoint.x
+      const dy = arr[i*3+1] - fromLocalPoint.y
+      const dz = arr[i*3+2] - fromLocalPoint.z
+      const len = Math.sqrt(dx*dx + dy*dy + dz*dz) + 0.01
+      const speed = 6 + Math.random() * 8
+      this.explodeVels[i*3]   = (dx / len) * speed
+      this.explodeVels[i*3+1] = (dy / len) * speed
+      this.explodeVels[i*3+2] = (dz / len) * speed
+    }
   }
 
   // ─── Hover with 3-hop cascade ─────────────────────────────────────────────
@@ -1337,6 +1423,9 @@ export class PointCloud {
   }
 
   _disposeAll() {
+    this.gravityPerturb = null
+    this.explodeDisp    = null
+    this.explodeVels    = null
     if (this.pointsMesh) {
       this.group.remove(this.pointsMesh)
       this.pointsMesh.geometry.dispose()
