@@ -2,7 +2,7 @@
  * UI module — wires up all sidebar controls.
  * Calls onRebuild() for heavy param changes, onParamChange(key, val) for lightweight ones.
  */
-export function initUI(params, { onRebuild, onParamChange, onScreenshot, onShare }) {
+export function initUI(params, { onRebuild, onParamChange, onScreenshot, onShare, onExportPLY, onEmbed }) {
 
   // ─── Slider helper ──────────────────────────────────────────────────────
 
@@ -241,6 +241,8 @@ export function initUI(params, { onRebuild, onParamChange, onScreenshot, onShare
 
   document.getElementById('btn-screenshot')?.addEventListener('click', onScreenshot)
   document.getElementById('btn-share')?.addEventListener('click', onShare)
+  document.getElementById('btn-export-ply')?.addEventListener('click', onExportPLY)
+  document.getElementById('btn-embed')?.addEventListener('click', onEmbed)
 
   // ─── Auto-spin ───────────────────────────────────────────────────────────
 

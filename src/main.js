@@ -208,6 +208,38 @@ initUI(params, {
     link.href = canvas.toDataURL('image/png')
     link.click()
   },
+  onExportPLY: () => {
+    const pos = cloud.pointsMesh.geometry.attributes.position.array
+    const n   = cloud.pointCount
+    const lines = [
+      'ply', 'format ascii 1.0',
+      `element vertex ${n}`,
+      'property float x', 'property float y', 'property float z',
+      'end_header',
+    ]
+    for (let i = 0; i < n; i++) {
+      lines.push(`${pos[i*3].toFixed(4)} ${pos[i*3+1].toFixed(4)} ${pos[i*3+2].toFixed(4)}`)
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+    const link = document.createElement('a')
+    link.download = `pcs_${params.seed}.ply`
+    link.href = URL.createObjectURL(blob)
+    link.click()
+    URL.revokeObjectURL(link.href)
+  },
+  onEmbed: () => {
+    const sp = new URLSearchParams()
+    for (const key of SHAREABLE) sp.set(key, String(params[key]))
+    const url  = `${location.origin}${location.pathname}?${sp.toString()}`
+    const html = `<iframe src="${url}" width="900" height="600" style="border:none;display:block;"></iframe>`
+    navigator.clipboard.writeText(html).then(() => {
+      const btn = document.getElementById('btn-embed')
+      if (!btn) return
+      const orig = btn.textContent
+      btn.textContent = '✓ COPIED'
+      setTimeout(() => { btn.textContent = orig }, 1500)
+    }).catch(() => { prompt('Copy this embed code:', html) })
+  },
   onShare: () => {
     const sp = new URLSearchParams()
     for (const key of SHAREABLE) sp.set(key, String(params[key]))
