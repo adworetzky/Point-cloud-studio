@@ -22,6 +22,12 @@ scene.fog = new THREE.FogExp2(0x020a08, 0.008)
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
 camera.position.set(0, 0, 70)
 
+// Orthographic camera — toggled with [O] / ortho button
+const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000)
+orthoCamera.position.set(0, 0, 70)
+let useOrtho = false
+let activeCamera = camera
+
 const controls = new OrbitControls(camera, canvas)
 controls.enableDamping = true
 controls.dampingFactor = 0.06
@@ -131,7 +137,7 @@ canvas.addEventListener('mouseleave', () => {
 
 function doRaycast() {
   if (!cloud.pointsMesh) return
-  raycaster.setFromCamera(mouse, camera)
+  raycaster.setFromCamera(mouse, activeCamera)
   const hits = raycaster.intersectObject(cloud.pointsMesh)
   if (hits.length > 0) {
     const idx = hits[0].index
@@ -156,8 +162,27 @@ function resize() {
   renderer.setSize(w, h)
   camera.aspect = w / h
   camera.updateProjectionMatrix()
+  // Sync ortho frustum to match current view distance
+  const dist = orthoCamera.position.length()
+  const halfH = Math.tan(THREE.MathUtils.degToRad(30)) * dist
+  const halfW = halfH * (w / h)
+  orthoCamera.left   = -halfW; orthoCamera.right  = halfW
+  orthoCamera.top    =  halfH; orthoCamera.bottom = -halfH
+  orthoCamera.updateProjectionMatrix()
   // Keep shader size-attenuation in sync with physical canvas height
   cloud.setRendererScale(renderer.domElement.height / 2)
+}
+
+function toggleOrtho() {
+  useOrtho = !useOrtho
+  activeCamera = useOrtho ? orthoCamera : camera
+  orthoCamera.position.copy(camera.position)
+  orthoCamera.quaternion.copy(camera.quaternion)
+  controls.object = activeCamera
+  controls.update()
+  const btn = document.getElementById('btn-ortho')
+  if (btn) btn.classList.toggle('mode-active', useOrtho)
+  resize()
 }
 window.addEventListener('resize', resize)
 resize()
@@ -202,7 +227,7 @@ initUI(params, {
     updateStats()
   },
   onScreenshot: () => {
-    renderer.render(scene, camera)
+    renderer.render(scene, activeCamera)
     const link = document.createElement('a')
     link.download = `pcs_${params.seed}_${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
@@ -286,7 +311,7 @@ function animate() {
     cloud.group.rotation.y += params.spinSpeed * dt
   }
 
-  renderer.render(scene, camera)
+  renderer.render(scene, activeCamera)
 
   // FPS
   fpsFrames++
@@ -314,6 +339,17 @@ function toggleShortcuts() {
 }
 
 document.getElementById('btn-help')?.addEventListener('click', toggleShortcuts)
+document.getElementById('btn-ortho')?.addEventListener('click', toggleOrtho)
+
+// CRT overlay toggle
+function toggleCRT() {
+  const overlay = document.getElementById('crt-overlay')
+  if (!overlay) return
+  overlay.classList.toggle('crt-active')
+  const btn = document.getElementById('btn-crt')
+  if (btn) btn.classList.toggle('mode-active', overlay.classList.contains('crt-active'))
+}
+document.getElementById('btn-crt')?.addEventListener('click', toggleCRT)
 
 document.getElementById('shortcuts-overlay')?.addEventListener('click', e => {
   if (e.target === e.currentTarget) toggleShortcuts()
@@ -346,5 +382,7 @@ document.addEventListener('keydown', e => {
     case 'p': document.getElementById('autoSpin')?.click();             break
     case 'n': document.getElementById('connectionsEnabled')?.click();   break
     case 'd': document.getElementById('driftEnabled')?.click();         break
+    case 'o': toggleOrtho();                                            break
+    case 'k': toggleCRT();                                              break
   }
 })
