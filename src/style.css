@@ -552,6 +552,42 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
   }
 }
 
+/* ─── Named presets ─────────────────────────────────────────────────────── */
+
+.preset-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  align-items: center;
+}
+
+.preset-load {
+  flex: 1;
+  font-size: 9px;
+  padding: 4px 6px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-del {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  font-size: 9px;
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.preset-del:hover { border-color: var(--danger); background: rgba(255,64,64,0.08); color: var(--danger); }
+
+.preset-empty {
+  font-size: 8px;
+  color: var(--text-muted);
+  letter-spacing: 0.15em;
+  padding: 4px 0;
+}
+
 /* ─── CRT / scanline overlay ────────────────────────────────────────────── */
 
 #crt-overlay {

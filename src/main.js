@@ -347,6 +347,102 @@ panelToggle?.addEventListener('click', () => {
   panelToggle.textContent = isOpen ? '×' : '≡'
 })
 
+// ─── Named presets ────────────────────────────────────────────────────────
+
+const PRESET_KEY = 'pcs_presets'
+
+function getPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESET_KEY) || '[]') } catch { return [] }
+}
+
+function savePreset() {
+  const nameEl = document.getElementById('preset-name')
+  const name   = nameEl?.value.trim() || `Preset ${getPresets().length + 1}`
+  const snap    = {}
+  for (const key of SHAREABLE) snap[key] = params[key]
+  const list = getPresets()
+  list.unshift({ name, snap, ts: Date.now() })
+  if (list.length > 12) list.length = 12  // cap at 12
+  localStorage.setItem(PRESET_KEY, JSON.stringify(list))
+  if (nameEl) nameEl.value = ''
+  renderPresets()
+}
+
+function loadPreset(snap) {
+  for (const key of SHAREABLE) {
+    if (snap[key] !== undefined) params[key] = snap[key]
+  }
+  const theme = COLOR_THEMES[params.colorTheme] || COLOR_THEMES.cityscan
+  renderer.setClearColor(theme.bg, 1)
+  scene.fog.color.setHex(theme.fog)
+  rebuildCloud()
+  // Re-sync all UI sliders/toggles
+  syncUIFromParams()
+}
+
+function deletePreset(index) {
+  const list = getPresets()
+  list.splice(index, 1)
+  localStorage.setItem(PRESET_KEY, JSON.stringify(list))
+  renderPresets()
+}
+
+function renderPresets() {
+  const container = document.getElementById('preset-list')
+  if (!container) return
+  const list = getPresets()
+  container.innerHTML = ''
+  if (list.length === 0) {
+    container.innerHTML = '<div class="preset-empty">NO PRESETS SAVED</div>'
+    return
+  }
+  list.forEach((p, i) => {
+    const row = document.createElement('div')
+    row.className = 'preset-row'
+    const nameBtn = document.createElement('button')
+    nameBtn.className = 'btn btn-secondary preset-load'
+    nameBtn.textContent = p.name
+    nameBtn.title = `Load "${p.name}"`
+    nameBtn.addEventListener('click', () => loadPreset(p.snap))
+    const delBtn = document.createElement('button')
+    delBtn.className = 'btn btn-ghost preset-del'
+    delBtn.textContent = '✕'
+    delBtn.title = 'Delete'
+    delBtn.addEventListener('click', () => deletePreset(i))
+    row.appendChild(nameBtn)
+    row.appendChild(delBtn)
+    container.appendChild(row)
+  })
+}
+
+// Sync UI elements from current params (for preset load)
+function syncUIFromParams() {
+  const ids = {
+    pointCount: 0, cloudRadius: 0, noiseScale: 2, noiseStrength: 2,
+    pointSize: 1, connectionDist: 1, lineOpacity: 2, lineWidth: 2,
+    driftSpeed: 3, driftAmp: 1, spinSpeed: 2, galaxyArms: 0, terrainStrata: 0,
+    hueRange: 0, hueOffset: 0,
+  }
+  for (const [id, dec] of Object.entries(ids)) {
+    const el = document.getElementById(id)
+    const val = document.getElementById(id + '-val')
+    if (el) el.value = params[id]
+    if (val) val.textContent = Number(params[id]).toFixed(dec) + (id.startsWith('hue') ? '°' : '')
+  }
+  const seedEl = document.getElementById('seedInput')
+  if (seedEl) seedEl.value = params.seed
+  // Sync toggles
+  ;[['connectionsEnabled','connections-toggle-text'],['driftEnabled','drift-toggle-text'],['autoSpin','autoSpin-text']].forEach(([id, txtId]) => {
+    const el = document.getElementById(id)
+    const txt = document.getElementById(txtId)
+    if (el) el.checked = params[id]
+    if (txt) txt.textContent = params[id] ? 'ON' : 'OFF'
+  })
+}
+
+document.getElementById('btn-preset-save')?.addEventListener('click', savePreset)
+renderPresets()
+
 // ─── Audio-reactive mode ──────────────────────────────────────────────────
 
 let audioCtx = null, audioAnalyser = null, audioData = null
