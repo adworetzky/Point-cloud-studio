@@ -77,6 +77,40 @@
           </div>
 
           <div class="control-row">
+            <label>COLOR MODE</label>
+            <div class="mode-group">
+              <button class="btn mode-btn mode-active" id="colormode-theme">THEME</button>
+              <button class="btn mode-btn"             id="colormode-positional">POSITIONAL</button>
+            </div>
+          </div>
+
+          <div id="hue-controls" style="display:none">
+            <div class="control-row">
+              <label>HUE AXIS</label>
+              <div class="mode-group">
+                <button class="btn mode-btn mode-active" id="hueaxis-y">Y</button>
+                <button class="btn mode-btn"             id="hueaxis-radial">RADIAL</button>
+                <button class="btn mode-btn"             id="hueaxis-x">X</button>
+                <button class="btn mode-btn"             id="hueaxis-z">Z</button>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>HUE RANGE</label>
+              <div class="input-row">
+                <input type="range" id="hueRange" min="0" max="360" step="1" value="120" />
+                <span class="val" id="hueRange-val">120°</span>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>HUE OFFSET</label>
+              <div class="input-row">
+                <input type="range" id="hueOffset" min="0" max="360" step="1" value="0" />
+                <span class="val" id="hueOffset-val">0°</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-row">
             <label>POINT COUNT</label>
             <div class="input-row">
               <input type="range" id="pointCount" min="50" max="3000" step="50" value="800" />
@@ -265,6 +299,51 @@
 
         <div class="divider"></div>
 
+        <!-- Named presets -->
+        <div class="section">
+          <div class="section-label">// PRESETS</div>
+          <div class="input-row" style="margin-bottom:8px">
+            <input type="text" id="preset-name" placeholder="preset name…" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--accent);font-family:var(--font);font-size:10px;padding:4px 6px;outline:none;" />
+            <button id="btn-preset-save" class="btn btn-primary" style="flex:0 0 auto;padding:4px 10px">SAVE</button>
+          </div>
+          <div id="preset-list"></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Bloom post-processing -->
+        <div class="section">
+          <div class="section-label">
+            // BLOOM
+            <button id="btn-bloom" class="btn btn-ghost" title="Toggle bloom glow effect">OFF</button>
+          </div>
+          <div id="bloom-controls" style="opacity:0.35">
+            <div class="control-row">
+              <label>STRENGTH</label>
+              <div class="input-row">
+                <input type="range" id="bloomStrength" min="0" max="3" step="0.1" value="0.8" />
+                <span class="val" id="bloomStrength-val">0.8</span>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>RADIUS</label>
+              <div class="input-row">
+                <input type="range" id="bloomRadius" min="0" max="1" step="0.01" value="0.4" />
+                <span class="val" id="bloomRadius-val">0.40</span>
+              </div>
+            </div>
+            <div class="control-row">
+              <label>THRESHOLD</label>
+              <div class="input-row">
+                <input type="range" id="bloomThreshold" min="0" max="1" step="0.01" value="0.2" />
+                <span class="val" id="bloomThreshold-val">0.20</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
         <!-- Actions -->
         <div class="section">
           <div class="section-label">// ACTIONS</div>
@@ -275,6 +354,18 @@
           <div class="btn-group" style="margin-top:6px">
             <button id="btn-share" class="btn btn-secondary" title="Copy shareable URL [U]">&#11208; SHARE URL</button>
             <button id="btn-help"  class="btn btn-ghost"     title="Keyboard shortcuts [/]">?</button>
+          </div>
+          <div class="btn-group" style="margin-top:6px">
+            <button id="btn-export-ply" class="btn btn-secondary" title="Export point positions as ASCII PLY">&#8659; PLY</button>
+            <button id="btn-export-stl" class="btn btn-secondary" title="Export as binary STL mesh (voxels, Blender/slicer)">&#8659; STL</button>
+            <button id="btn-embed"      class="btn btn-ghost"     title="Copy iframe embed snippet">&#9670; EMBED</button>
+          </div>
+          <div class="btn-group" style="margin-top:6px">
+            <button id="btn-ortho" class="btn btn-secondary" title="Toggle orthographic camera [O]">&#9633; ORTHO</button>
+            <button id="btn-crt"   class="btn btn-secondary" title="Toggle scanline overlay [K]">&#9641; SCANLINE</button>
+          </div>
+          <div class="btn-group" style="margin-top:6px">
+            <button id="btn-audio" class="btn btn-secondary" title="Toggle audio-reactive mode (mic)">&#9654; AUDIO</button>
           </div>
           <div class="control-row" style="margin-top:10px">
             <label>SEED</label>
@@ -295,6 +386,9 @@
         </div>
       </div>
     </div>
+
+    <!-- CRT / scanline overlay (toggled via [K] or SCANLINE button) -->
+    <div id="crt-overlay"></div>
 
     <!-- Hover tooltip -->
     <div id="hover-tooltip"></div>
@@ -322,6 +416,9 @@
           <kbd>P</kbd><span>Toggle auto-spin</span>
           <kbd>N</kbd><span>Toggle network</span>
           <kbd>D</kbd><span>Toggle drift</span>
+          <kbd>O</kbd><span>Toggle ortho camera</span>
+          <kbd>K</kbd><span>Toggle scanline</span>
+          <kbd>X</kbd><span>Explode from center</span>
           <hr class="shortcuts-sep" />
           <kbd>/</kbd><span>This help</span>
           <kbd>Esc</kbd><span>Close</span>

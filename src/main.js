@@ -1,5 +1,9 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { PointCloud, COLOR_THEMES } from './pointCloud.js'
 import { initUI } from './ui.js'
 
@@ -19,8 +23,25 @@ renderer.setClearColor(0x020a08, 1)
 const scene = new THREE.Scene()
 scene.fog = new THREE.FogExp2(0x020a08, 0.008)
 
+// ─── Post-processing (bloom) ──────────────────────────────────────────────
+
+const renderPass  = new RenderPass(scene, camera)  // camera ref updated in animate
+const bloomPass   = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.8, 0.4, 0.2)
+const outputPass  = new OutputPass()
+const composer    = new EffectComposer(renderer)
+composer.addPass(renderPass)
+composer.addPass(bloomPass)
+composer.addPass(outputPass)
+let bloomEnabled  = false
+
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
 camera.position.set(0, 0, 70)
+
+// Orthographic camera — toggled with [O] / ortho button
+const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000)
+orthoCamera.position.set(0, 0, 70)
+let useOrtho = false
+let activeCamera = camera
 
 const controls = new OrbitControls(camera, canvas)
 controls.enableDamping = true
@@ -65,6 +86,11 @@ const params = {
   // Style-specific
   galaxyArms:    3,
   terrainStrata: 5,
+  // Positional hue shift
+  colorMode:  'theme',  // 'theme' | 'positional'
+  hueAxis:    'y',      // 'y' | 'radial' | 'x' | 'z'
+  hueRange:   120,      // degrees of hue sweep (0–360)
+  hueOffset:  0,        // base hue rotation (0–360)
   // Image-driven mode
   imageData:    null,        // Uint8ClampedArray | null
   imageWidth:   0,
@@ -77,9 +103,10 @@ const params = {
 const SHAREABLE    = ['seed','cloudStyle','colorTheme','pointCount','cloudRadius',
   'noiseScale','noiseStrength','pointSize','connectionsEnabled','connectionDist',
   'lineOpacity','driftEnabled','driftSpeed','driftAmp','imageMapMode',
-  'autoSpin','spinSpeed','galaxyArms','terrainStrata']
+  'autoSpin','spinSpeed','galaxyArms','terrainStrata',
+  'colorMode','hueAxis','hueRange','hueOffset']
 const BOOL_PARAMS  = new Set(['connectionsEnabled','driftEnabled','autoSpin'])
-const STRING_PARAMS = new Set(['cloudStyle','colorTheme','imageMapMode'])
+const STRING_PARAMS = new Set(['cloudStyle','colorTheme','imageMapMode','colorMode','hueAxis'])
 
 const urlP = new URLSearchParams(window.location.search)
 for (const key of SHAREABLE) {
@@ -121,11 +148,51 @@ canvas.addEventListener('mouseleave', () => {
   mouse.set(-9999, -9999)
   cloud.setHovered(-1)
   tooltip.style.display = 'none'
+  cloud.gravityTarget = null
+})
+
+// ─── Gravity cursor ───────────────────────────────────────────────────────
+
+let gravityActive = false
+const gravityPlane     = new THREE.Plane()
+const gravityIntersect = new THREE.Vector3()
+
+canvas.addEventListener('mousedown', e => { if (e.button === 0) gravityActive = true })
+canvas.addEventListener('mouseup',   e => { if (e.button === 0) { gravityActive = false; cloud.gravityTarget = null } })
+
+function updateGravityTarget() {
+  if (!gravityActive) return
+  gravityPlane.setFromNormalAndCoplanarPoint(
+    activeCamera.position.clone().normalize(),
+    new THREE.Vector3(0, 0, 0)
+  )
+  raycaster.setFromCamera(mouse, activeCamera)
+  if (raycaster.ray.intersectPlane(gravityPlane, gravityIntersect)) {
+    cloud.gravityTarget = cloud.group.worldToLocal(gravityIntersect.clone())
+  }
+}
+
+// ─── Click-to-explode ─────────────────────────────────────────────────────
+
+canvas.addEventListener('click', e => {
+  if (!cloud.pointsMesh) return
+  // Only explode on quick clicks (not after drag)
+  const rect = canvas.getBoundingClientRect()
+  const clickMouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  )
+  raycaster.setFromCamera(clickMouse, activeCamera)
+  const hits = raycaster.intersectObject(cloud.pointsMesh)
+  if (hits.length > 0) {
+    const localPt = cloud.group.worldToLocal(hits[0].point.clone())
+    cloud.explode(localPt)
+  }
 })
 
 function doRaycast() {
   if (!cloud.pointsMesh) return
-  raycaster.setFromCamera(mouse, camera)
+  raycaster.setFromCamera(mouse, activeCamera)
   const hits = raycaster.intersectObject(cloud.pointsMesh)
   if (hits.length > 0) {
     const idx = hits[0].index
@@ -150,8 +217,28 @@ function resize() {
   renderer.setSize(w, h)
   camera.aspect = w / h
   camera.updateProjectionMatrix()
+  // Sync ortho frustum to match current view distance
+  const dist = orthoCamera.position.length()
+  const halfH = Math.tan(THREE.MathUtils.degToRad(30)) * dist
+  const halfW = halfH * (w / h)
+  orthoCamera.left   = -halfW; orthoCamera.right  = halfW
+  orthoCamera.top    =  halfH; orthoCamera.bottom = -halfH
+  orthoCamera.updateProjectionMatrix()
   // Keep shader size-attenuation in sync with physical canvas height
   cloud.setRendererScale(renderer.domElement.height / 2)
+  composer.setSize(w, h)
+}
+
+function toggleOrtho() {
+  useOrtho = !useOrtho
+  activeCamera = useOrtho ? orthoCamera : camera
+  orthoCamera.position.copy(camera.position)
+  orthoCamera.quaternion.copy(camera.quaternion)
+  controls.object = activeCamera
+  controls.update()
+  const btn = document.getElementById('btn-ortho')
+  if (btn) btn.classList.toggle('mode-active', useOrtho)
+  resize()
 }
 window.addEventListener('resize', resize)
 resize()
@@ -196,11 +283,106 @@ initUI(params, {
     updateStats()
   },
   onScreenshot: () => {
-    renderer.render(scene, camera)
+    renderer.render(scene, activeCamera)
     const link = document.createElement('a')
     link.download = `pcs_${params.seed}_${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
+  },
+  onExportPLY: () => {
+    const pos = cloud.pointsMesh.geometry.attributes.position.array
+    const n   = cloud.pointCount
+    const lines = [
+      'ply', 'format ascii 1.0',
+      `element vertex ${n}`,
+      'property float x', 'property float y', 'property float z',
+      'end_header',
+    ]
+    for (let i = 0; i < n; i++) {
+      lines.push(`${pos[i*3].toFixed(4)} ${pos[i*3+1].toFixed(4)} ${pos[i*3+2].toFixed(4)}`)
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+    const link = document.createElement('a')
+    link.download = `pcs_${params.seed}.ply`
+    link.href = URL.createObjectURL(blob)
+    link.click()
+    URL.revokeObjectURL(link.href)
+  },
+  onExportSTL: () => {
+    const pos   = cloud.pointsMesh.geometry.attributes.position.array
+    const n     = cloud.pointCount
+    // Half-size of each cube, scaled to cloud density
+    const r     = Math.max(0.15, params.cloudRadius / Math.pow(n, 1 / 3) * 0.30)
+    const nTris = n * 12  // 12 triangles per axis-aligned cube
+    const buf   = new ArrayBuffer(80 + 4 + nTris * 50)
+    const view  = new DataView(buf)
+
+    // 80-byte ASCII header
+    const hdr = `PCS STL seed=${params.seed} r=${r.toFixed(3)}`
+    for (let i = 0; i < Math.min(hdr.length, 80); i++) view.setUint8(i, hdr.charCodeAt(i))
+    view.setUint32(80, nTris, true)
+
+    let off = 84
+    function writeTri(nx, ny, nz, ax, ay, az, bx, by, bz, cx, cy, cz) {
+      view.setFloat32(off, nx, true); off += 4
+      view.setFloat32(off, ny, true); off += 4
+      view.setFloat32(off, nz, true); off += 4
+      view.setFloat32(off, ax, true); off += 4
+      view.setFloat32(off, ay, true); off += 4
+      view.setFloat32(off, az, true); off += 4
+      view.setFloat32(off, bx, true); off += 4
+      view.setFloat32(off, by, true); off += 4
+      view.setFloat32(off, bz, true); off += 4
+      view.setFloat32(off, cx, true); off += 4
+      view.setFloat32(off, cy, true); off += 4
+      view.setFloat32(off, cz, true); off += 4
+      view.setUint16(off, 0, true);  off += 2
+    }
+
+    for (let i = 0; i < n; i++) {
+      const cx = pos[i*3], cy = pos[i*3+1], cz = pos[i*3+2]
+      const x0 = cx-r, x1 = cx+r
+      const y0 = cy-r, y1 = cy+r
+      const z0 = cz-r, z1 = cz+r
+      // -Z face  (normal 0, 0,-1)  verts: v0,v2,v1 then v0,v3,v2
+      writeTri( 0, 0,-1,  x0,y0,z0,  x1,y1,z0,  x1,y0,z0)
+      writeTri( 0, 0,-1,  x0,y0,z0,  x0,y1,z0,  x1,y1,z0)
+      // +Z face  (normal 0, 0,+1)  v4,v5,v6 then v4,v6,v7
+      writeTri( 0, 0,+1,  x0,y0,z1,  x1,y0,z1,  x1,y1,z1)
+      writeTri( 0, 0,+1,  x0,y0,z1,  x1,y1,z1,  x0,y1,z1)
+      // +X face  (normal+1, 0, 0)  v1,v2,v6 then v1,v6,v5
+      writeTri(+1, 0, 0,  x1,y0,z0,  x1,y1,z0,  x1,y1,z1)
+      writeTri(+1, 0, 0,  x1,y0,z0,  x1,y1,z1,  x1,y0,z1)
+      // -X face  (normal-1, 0, 0)  v0,v4,v3 then v3,v4,v7
+      writeTri(-1, 0, 0,  x0,y0,z0,  x0,y0,z1,  x0,y1,z0)
+      writeTri(-1, 0, 0,  x0,y1,z0,  x0,y0,z1,  x0,y1,z1)
+      // -Y face  (normal 0,-1, 0)  v0,v1,v5 then v0,v5,v4
+      writeTri( 0,-1, 0,  x0,y0,z0,  x1,y0,z0,  x1,y0,z1)
+      writeTri( 0,-1, 0,  x0,y0,z0,  x1,y0,z1,  x0,y0,z1)
+      // +Y face  (normal 0,+1, 0)  v2,v3,v7 then v2,v7,v6
+      writeTri( 0,+1, 0,  x1,y1,z0,  x0,y1,z0,  x0,y1,z1)
+      writeTri( 0,+1, 0,  x1,y1,z0,  x0,y1,z1,  x1,y1,z1)
+    }
+
+    const blob = new Blob([buf], { type: 'application/octet-stream' })
+    const link = document.createElement('a')
+    link.download = `pcs_${params.seed}.stl`
+    link.href = URL.createObjectURL(blob)
+    link.click()
+    URL.revokeObjectURL(link.href)
+  },
+  onEmbed: () => {
+    const sp = new URLSearchParams()
+    for (const key of SHAREABLE) sp.set(key, String(params[key]))
+    const url  = `${location.origin}${location.pathname}?${sp.toString()}`
+    const html = `<iframe src="${url}" width="900" height="600" style="border:none;display:block;"></iframe>`
+    navigator.clipboard.writeText(html).then(() => {
+      const btn = document.getElementById('btn-embed')
+      if (!btn) return
+      const orig = btn.textContent
+      btn.textContent = '✓ COPIED'
+      setTimeout(() => { btn.textContent = orig }, 1500)
+    }).catch(() => { prompt('Copy this embed code:', html) })
   },
   onShare: () => {
     const sp = new URLSearchParams()
@@ -228,6 +410,163 @@ panelToggle?.addEventListener('click', () => {
   panelToggle.textContent = isOpen ? '×' : '≡'
 })
 
+// ─── Named presets ────────────────────────────────────────────────────────
+
+const PRESET_KEY = 'pcs_presets'
+
+function getPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESET_KEY) || '[]') } catch { return [] }
+}
+
+function savePreset() {
+  const nameEl = document.getElementById('preset-name')
+  const name   = nameEl?.value.trim() || `Preset ${getPresets().length + 1}`
+  const snap    = {}
+  for (const key of SHAREABLE) snap[key] = params[key]
+  const list = getPresets()
+  list.unshift({ name, snap, ts: Date.now() })
+  if (list.length > 12) list.length = 12  // cap at 12
+  localStorage.setItem(PRESET_KEY, JSON.stringify(list))
+  if (nameEl) nameEl.value = ''
+  renderPresets()
+}
+
+function loadPreset(snap) {
+  for (const key of SHAREABLE) {
+    if (snap[key] !== undefined) params[key] = snap[key]
+  }
+  const theme = COLOR_THEMES[params.colorTheme] || COLOR_THEMES.cityscan
+  renderer.setClearColor(theme.bg, 1)
+  scene.fog.color.setHex(theme.fog)
+  rebuildCloud()
+  // Re-sync all UI sliders/toggles
+  syncUIFromParams()
+}
+
+function deletePreset(index) {
+  const list = getPresets()
+  list.splice(index, 1)
+  localStorage.setItem(PRESET_KEY, JSON.stringify(list))
+  renderPresets()
+}
+
+function renderPresets() {
+  const container = document.getElementById('preset-list')
+  if (!container) return
+  const list = getPresets()
+  container.innerHTML = ''
+  if (list.length === 0) {
+    container.innerHTML = '<div class="preset-empty">NO PRESETS SAVED</div>'
+    return
+  }
+  list.forEach((p, i) => {
+    const row = document.createElement('div')
+    row.className = 'preset-row'
+    const nameBtn = document.createElement('button')
+    nameBtn.className = 'btn btn-secondary preset-load'
+    nameBtn.textContent = p.name
+    nameBtn.title = `Load "${p.name}"`
+    nameBtn.addEventListener('click', () => loadPreset(p.snap))
+    const delBtn = document.createElement('button')
+    delBtn.className = 'btn btn-ghost preset-del'
+    delBtn.textContent = '✕'
+    delBtn.title = 'Delete'
+    delBtn.addEventListener('click', () => deletePreset(i))
+    row.appendChild(nameBtn)
+    row.appendChild(delBtn)
+    container.appendChild(row)
+  })
+}
+
+// Sync UI elements from current params (for preset load)
+function syncUIFromParams() {
+  const ids = {
+    pointCount: 0, cloudRadius: 0, noiseScale: 2, noiseStrength: 2,
+    pointSize: 1, connectionDist: 1, lineOpacity: 2, lineWidth: 2,
+    driftSpeed: 3, driftAmp: 1, spinSpeed: 2, galaxyArms: 0, terrainStrata: 0,
+    hueRange: 0, hueOffset: 0,
+  }
+  for (const [id, dec] of Object.entries(ids)) {
+    const el = document.getElementById(id)
+    const val = document.getElementById(id + '-val')
+    if (el) el.value = params[id]
+    if (val) val.textContent = Number(params[id]).toFixed(dec) + (id.startsWith('hue') ? '°' : '')
+  }
+  const seedEl = document.getElementById('seedInput')
+  if (seedEl) seedEl.value = params.seed
+  // Sync toggles
+  ;[['connectionsEnabled','connections-toggle-text'],['driftEnabled','drift-toggle-text'],['autoSpin','autoSpin-text']].forEach(([id, txtId]) => {
+    const el = document.getElementById(id)
+    const txt = document.getElementById(txtId)
+    if (el) el.checked = params[id]
+    if (txt) txt.textContent = params[id] ? 'ON' : 'OFF'
+  })
+}
+
+document.getElementById('btn-preset-save')?.addEventListener('click', savePreset)
+renderPresets()
+
+// ─── Audio-reactive mode ──────────────────────────────────────────────────
+
+let audioCtx = null, audioAnalyser = null, audioData = null
+let audioEnabled = false
+let _baseDriftAmp = params.driftAmp, _baseDriftSpeed = params.driftSpeed
+
+async function enableAudio() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    audioCtx      = new AudioContext()
+    const source  = audioCtx.createMediaStreamSource(stream)
+    audioAnalyser = audioCtx.createAnalyser()
+    audioAnalyser.fftSize = 64
+    source.connect(audioAnalyser)
+    audioData     = new Uint8Array(audioAnalyser.frequencyBinCount)
+    audioEnabled  = true
+    _baseDriftAmp   = params.driftAmp
+    _baseDriftSpeed = params.driftSpeed
+    const btn = document.getElementById('btn-audio')
+    if (btn) { btn.textContent = '⏹ AUDIO ON'; btn.classList.add('mode-active') }
+  } catch {
+    alert('Microphone access denied or unavailable.')
+  }
+}
+
+function disableAudio() {
+  audioEnabled = false
+  if (audioCtx) { audioCtx.close(); audioCtx = null }
+  audioAnalyser = null; audioData = null
+  params.driftAmp   = _baseDriftAmp
+  params.driftSpeed = _baseDriftSpeed
+  cloud.applyParam('driftAmp', _baseDriftAmp)
+  const btn = document.getElementById('btn-audio')
+  if (btn) { btn.textContent = '▶ AUDIO'; btn.classList.remove('mode-active') }
+}
+
+function tickAudio() {
+  if (!audioEnabled || !audioAnalyser) return
+  audioAnalyser.getByteFrequencyData(audioData)
+  const len  = audioData.length
+  // Bass: first 25% of bins
+  let bass = 0
+  const bassEnd = Math.floor(len * 0.25)
+  for (let i = 0; i < bassEnd; i++) bass += audioData[i]
+  bass = bass / (bassEnd * 255)  // 0–1
+  // Treble: upper 40% of bins
+  let treble = 0
+  const trebStart = Math.floor(len * 0.6)
+  for (let i = trebStart; i < len; i++) treble += audioData[i]
+  treble = treble / ((len - trebStart) * 255)  // 0–1
+
+  // Bass → driftAmp; treble → driftSpeed
+  params.driftAmp   = _baseDriftAmp   * (1 + bass   * 2.5)
+  params.driftSpeed = _baseDriftSpeed * (1 + treble  * 1.5)
+}
+
+document.getElementById('btn-audio')?.addEventListener('click', () => {
+  if (audioEnabled) disableAudio()
+  else enableAudio()
+})
+
 // ─── Animation loop ───────────────────────────────────────────────────────
 
 const clock = new THREE.Clock()
@@ -241,6 +580,8 @@ function animate() {
   prevTime      = elapsed
 
   controls.update()
+  tickAudio()
+  updateGravityTarget()
   doRaycast()
   cloud.update(elapsed)
 
@@ -248,7 +589,12 @@ function animate() {
     cloud.group.rotation.y += params.spinSpeed * dt
   }
 
-  renderer.render(scene, camera)
+  renderPass.camera = activeCamera
+  if (bloomEnabled) {
+    composer.render()
+  } else {
+    renderer.render(scene, activeCamera)
+  }
 
   // FPS
   fpsFrames++
@@ -276,6 +622,47 @@ function toggleShortcuts() {
 }
 
 document.getElementById('btn-help')?.addEventListener('click', toggleShortcuts)
+document.getElementById('btn-ortho')?.addEventListener('click', toggleOrtho)
+
+// Bloom controls
+function setBloom(enabled) {
+  bloomEnabled = enabled
+  const btn = document.getElementById('btn-bloom')
+  if (btn) { btn.classList.toggle('mode-active', enabled); btn.textContent = enabled ? 'ON' : 'OFF' }
+  const ctrls = document.getElementById('bloom-controls')
+  if (ctrls) ctrls.style.opacity = enabled ? '1' : '0.35'
+}
+document.getElementById('btn-bloom')?.addEventListener('click', () => setBloom(!bloomEnabled))
+
+const bloomStrengthEl = document.getElementById('bloomStrength')
+const bloomRadiusEl   = document.getElementById('bloomRadius')
+const bloomThreshEl   = document.getElementById('bloomThreshold')
+
+bloomStrengthEl?.addEventListener('input', () => {
+  bloomPass.strength = parseFloat(bloomStrengthEl.value)
+  const v = document.getElementById('bloomStrength-val')
+  if (v) v.textContent = parseFloat(bloomStrengthEl.value).toFixed(1)
+})
+bloomRadiusEl?.addEventListener('input', () => {
+  bloomPass.radius = parseFloat(bloomRadiusEl.value)
+  const v = document.getElementById('bloomRadius-val')
+  if (v) v.textContent = parseFloat(bloomRadiusEl.value).toFixed(2)
+})
+bloomThreshEl?.addEventListener('input', () => {
+  bloomPass.threshold = parseFloat(bloomThreshEl.value)
+  const v = document.getElementById('bloomThreshold-val')
+  if (v) v.textContent = parseFloat(bloomThreshEl.value).toFixed(2)
+})
+
+// CRT overlay toggle
+function toggleCRT() {
+  const overlay = document.getElementById('crt-overlay')
+  if (!overlay) return
+  overlay.classList.toggle('crt-active')
+  const btn = document.getElementById('btn-crt')
+  if (btn) btn.classList.toggle('mode-active', overlay.classList.contains('crt-active'))
+}
+document.getElementById('btn-crt')?.addEventListener('click', toggleCRT)
 
 document.getElementById('shortcuts-overlay')?.addEventListener('click', e => {
   if (e.target === e.currentTarget) toggleShortcuts()
@@ -308,5 +695,8 @@ document.addEventListener('keydown', e => {
     case 'p': document.getElementById('autoSpin')?.click();             break
     case 'n': document.getElementById('connectionsEnabled')?.click();   break
     case 'd': document.getElementById('driftEnabled')?.click();         break
+    case 'o': toggleOrtho();                                            break
+    case 'k': toggleCRT();                                              break
+    case 'x': cloud.explode(new THREE.Vector3(0, 0, 0));               break
   }
 })

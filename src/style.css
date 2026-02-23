@@ -552,6 +552,74 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
   }
 }
 
+/* ─── Named presets ─────────────────────────────────────────────────────── */
+
+.preset-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  align-items: center;
+}
+
+.preset-load {
+  flex: 1;
+  font-size: 9px;
+  padding: 4px 6px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-del {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  font-size: 9px;
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.preset-del:hover { border-color: var(--danger); background: rgba(255,64,64,0.08); color: var(--danger); }
+
+.preset-empty {
+  font-size: 8px;
+  color: var(--text-muted);
+  letter-spacing: 0.15em;
+  padding: 4px 0;
+}
+
+/* ─── CRT / scanline overlay ────────────────────────────────────────────── */
+
+#crt-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  /* Horizontal scanlines */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(0, 0, 0, 0.18) 3px,
+      rgba(0, 0, 0, 0.18) 4px
+    );
+}
+
+/* Vignette via a radial pseudo-element */
+#crt-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+}
+
+#crt-overlay.crt-active {
+  opacity: 1;
+}
+
 /* ─── Keyboard shortcuts overlay ────────────────────────────────────────── */
 
 #shortcuts-overlay {
