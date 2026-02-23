@@ -23,6 +23,17 @@ renderer.setClearColor(0x020a08, 1)
 const scene = new THREE.Scene()
 scene.fog = new THREE.FogExp2(0x020a08, 0.008)
 
+// ─── Cameras ──────────────────────────────────────────────────────────────
+
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
+camera.position.set(0, 0, 70)
+
+// Orthographic camera — toggled with [O] / ortho button
+const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000)
+orthoCamera.position.set(0, 0, 70)
+let useOrtho = false
+let activeCamera = camera
+
 // ─── Post-processing (bloom) ──────────────────────────────────────────────
 
 const renderPass  = new RenderPass(scene, camera)  // camera ref updated in animate
@@ -33,15 +44,6 @@ composer.addPass(renderPass)
 composer.addPass(bloomPass)
 composer.addPass(outputPass)
 let bloomEnabled  = false
-
-const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
-camera.position.set(0, 0, 70)
-
-// Orthographic camera — toggled with [O] / ortho button
-const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000)
-orthoCamera.position.set(0, 0, 70)
-let useOrtho = false
-let activeCamera = camera
 
 const controls = new OrbitControls(camera, canvas)
 controls.enableDamping = true
@@ -126,7 +128,7 @@ for (const key of SHAREABLE) {
 
 // ─── Point cloud ──────────────────────────────────────────────────────────
 
-let cloud = new PointCloud(scene, { ...params })
+let cloud = new PointCloud(scene, params)
 
 // ─── Hover / raycasting ───────────────────────────────────────────────────
 
@@ -227,6 +229,7 @@ function resize() {
   // Keep shader size-attenuation in sync with physical canvas height
   cloud.setRendererScale(renderer.domElement.height / 2)
   composer.setSize(w, h)
+  bloomPass.resolution.set(w, h)
 }
 
 function toggleOrtho() {
@@ -253,7 +256,7 @@ const statFps = document.getElementById('stat-fps')
 function rebuildCloud() {
   const prevRotY = cloud.group.rotation.y   // preserve spin angle across rebuilds
   cloud.dispose()
-  cloud = new PointCloud(scene, { ...params })
+  cloud = new PointCloud(scene, params)
   cloud.group.rotation.y = prevRotY
   cloud.setRendererScale(renderer.domElement.height / 2)
   updateStats()

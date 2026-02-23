@@ -88,17 +88,19 @@ const POINT_FRAG = `
 // ─── Edge shader ─────────────────────────────────────────────────────────────
 
 const LINE_VERT = `
+  attribute vec3 color;
+  varying vec3 vColor;
   void main() {
+    vColor = color;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `
 
 const LINE_FRAG = `
+  varying vec3 vColor;
   uniform float uOpacity;
-  uniform vec3  uColor;
-
   void main() {
-    gl_FragColor = vec4(uColor * uOpacity, uOpacity);
+    gl_FragColor = vec4(vColor * uOpacity, uOpacity);
   }
 `
 
@@ -1169,6 +1171,7 @@ export class PointCloud {
     }
 
     const linePositions = []
+    const edgePairs     = []
     const adjacency     = Array.from({ length: n }, () => [])
     let   edgeIndex     = 0
 
@@ -1185,6 +1188,7 @@ export class PointCloud {
               const ddx = pos[j*3]-ix, ddy = pos[j*3+1]-iy, ddz = pos[j*3+2]-iz
               if (ddx*ddx + ddy*ddy + ddz*ddz < maxDist2) {
                 linePositions.push(ix, iy, iz, pos[j*3], pos[j*3+1], pos[j*3+2])
+                edgePairs.push(i, j)
                 adjacency[i].push(j)
                 adjacency[j].push(i)
                 edgeIndex++
@@ -1197,15 +1201,27 @@ export class PointCloud {
 
     this.edgeCount  = edgeIndex
     this._adjacency = adjacency
+    this._edgePairs = new Int32Array(edgePairs)
+
+    // Derive line vertex colors from the two endpoint point colors
+    // This makes lines reflect both theme gradients and positional hue mode
+    const ptColors   = this.pointsMesh.geometry.attributes.color.array
+    const lineColors = new Float32Array(edgeIndex * 6)
+    for (let e = 0; e < edgeIndex; e++) {
+      const pi = edgePairs[e * 2], pj = edgePairs[e * 2 + 1]
+      lineColors[e*6]   = ptColors[pi*3];   lineColors[e*6+3] = ptColors[pj*3]
+      lineColors[e*6+1] = ptColors[pi*3+1]; lineColors[e*6+4] = ptColors[pj*3+1]
+      lineColors[e*6+2] = ptColors[pi*3+2]; lineColors[e*6+5] = ptColors[pj*3+2]
+    }
+    this._lineBaseColors = lineColors.slice()
+
+    this._lineUniforms = {
+      uOpacity: { value: p.lineOpacity },
+    }
 
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(linePositions), 3))
-
-    const theme = COLOR_THEMES[p.colorTheme] || COLOR_THEMES.cityscan
-    this._lineUniforms = {
-      uOpacity: { value: p.lineOpacity },
-      uColor:   { value: new THREE.Color(theme.base) },
-    }
+    geo.setAttribute('color',    new THREE.BufferAttribute(lineColors, 3))
 
     const mat = new THREE.ShaderMaterial({
       uniforms:       this._lineUniforms,
@@ -1301,6 +1317,20 @@ export class PointCloud {
     }
 
     pos.needsUpdate = true
+
+    // Sync line endpoint positions to match the updated point positions
+    if (this.lineSegments && this._edgePairs) {
+      const linePosAttr = this.lineSegments.geometry.attributes.position
+      const lp = linePosAttr.array
+      const E  = this.edgeCount
+      for (let e = 0; e < E; e++) {
+        const pi = this._edgePairs[e * 2], pj = this._edgePairs[e * 2 + 1]
+        lp[e*6]   = arr[pi*3];   lp[e*6+3] = arr[pj*3]
+        lp[e*6+1] = arr[pi*3+1]; lp[e*6+4] = arr[pj*3+1]
+        lp[e*6+2] = arr[pi*3+2]; lp[e*6+5] = arr[pj*3+2]
+      }
+      linePosAttr.needsUpdate = true
+    }
   }
 
   // ─── Explode from a local-space point ─────────────────────────────────────
@@ -1383,6 +1413,50 @@ export class PointCloud {
     }
 
     colors.needsUpdate = true
+
+    // Recolor line verts to match the hop cascade
+    if (this.lineSegments && this._edgePairs) {
+      const lineColorAttr = this.lineSegments.geometry.attributes.color
+      const la = lineColorAttr.array
+      const E = this.edgeCount
+
+      if (index < 0) {
+        // No hover — restore original point-derived colors
+        la.set(this._lineBaseColors)
+      } else {
+        const base = this._lineBaseColors
+        for (let e = 0; e < E; e++) {
+          const pi = this._edgePairs[e * 2]
+          const pj = this._edgePairs[e * 2 + 1]
+          const hi = pi === index ? 0 : (hopMap.has(pi) ? hopMap.get(pi) : -1)
+          const hj = pj === index ? 0 : (hopMap.has(pj) ? hopMap.get(pj) : -1)
+          const minHop = Math.min(hi < 0 ? 999 : hi, hj < 0 ? 999 : hj)
+          if (minHop === 0) {
+            la[e*6]   = la[e*6+3] = hop1Color.r
+            la[e*6+1] = la[e*6+4] = hop1Color.g
+            la[e*6+2] = la[e*6+5] = hop1Color.b
+          } else if (minHop === 1) {
+            la[e*6]   = la[e*6+3] = hop2Color.r
+            la[e*6+1] = la[e*6+4] = hop2Color.g
+            la[e*6+2] = la[e*6+5] = hop2Color.b
+          } else if (minHop === 2) {
+            la[e*6]   = la[e*6+3] = hop3Color.r
+            la[e*6+1] = la[e*6+4] = hop3Color.g
+            la[e*6+2] = la[e*6+5] = hop3Color.b
+          } else {
+            // Dim the base (positional/theme) color rather than replacing it
+            la[e*6]   = base[e*6]   * 0.15
+            la[e*6+1] = base[e*6+1] * 0.15
+            la[e*6+2] = base[e*6+2] * 0.15
+            la[e*6+3] = base[e*6+3] * 0.15
+            la[e*6+4] = base[e*6+4] * 0.15
+            la[e*6+5] = base[e*6+5] * 0.15
+          }
+        }
+      }
+
+      lineColorAttr.needsUpdate = true
+    }
   }
 
   // ─── Live param updates ───────────────────────────────────────────────────
@@ -1413,8 +1487,16 @@ export class PointCloud {
   applyTheme(themeName) {
     this.params.colorTheme = themeName
     const theme = COLOR_THEMES[themeName] || COLOR_THEMES.cityscan
-    if (this._lineUniforms) {
-      this._lineUniforms.uColor.value.setHex(theme.base)
+    if (this.lineSegments) {
+      const connColor = new THREE.Color(theme.conn)
+      const la = this.lineSegments.geometry.attributes.color.array
+      for (let e = 0; e < this.edgeCount; e++) {
+        la[e*6]   = la[e*6+3] = connColor.r
+        la[e*6+1] = la[e*6+4] = connColor.g
+        la[e*6+2] = la[e*6+5] = connColor.b
+      }
+      this._lineBaseColors = la.slice()
+      this.lineSegments.geometry.attributes.color.needsUpdate = true
     }
   }
 
@@ -1439,7 +1521,9 @@ export class PointCloud {
       this.lineSegments = null
       this._lineUniforms = null
     }
-    this._adjacency = null
+    this._adjacency    = null
+    this._edgePairs    = null
+    this._lineBaseColors = null
   }
 
   // Full teardown including the scene group — call this before replacing the instance

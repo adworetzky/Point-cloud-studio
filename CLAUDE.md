@@ -29,7 +29,7 @@ vite.config.js     # base: '/Point-cloud-studio/' for GitHub Pages
 
 ## Key Patterns
 
-**Params object** (`main.js`): Single source of truth for all state. Passed by reference to `PointCloud` and `initUI`.
+**Params object** (`main.js`): Single source of truth for all state. Passed by reference to `PointCloud` and `initUI`. ⚠️ `PointCloud` is constructed with the direct `params` reference (`new PointCloud(scene, params)`), NOT a spread copy — audio-reactive mode writes `params.driftAmp`/`params.driftSpeed` directly each frame and relies on this being the same object `cloud.update()` reads.
 
 **Rebuild vs. live params** — critical distinction:
 - **Rebuild** (destroys + recreates geometry): `cloudStyle`, `pointCount`, `cloudRadius`, `noiseScale`, `noiseStrength`, `seed`, `colorMode`, `hueAxis`, `hueRange`, `hueOffset`
@@ -48,7 +48,7 @@ vite.config.js     # base: '/Point-cloud-studio/' for GitHub Pages
 - `'fluid'` — curl-noise fluid streamlines
 - `'lsystem'` — 3D recursive branching tree
 
-**Color themes** (`params.colorTheme`): `'cityscan'` (teal), `'cosmic'` (purple), `'bio'` (green), `'infrared'` (heat), `'mono'` (monochrome), `'sunset'` (pink). Theme changes update renderer clear color, fog, line shader uniform, and trigger rebuild to bake new point colors.
+**Color themes** (`params.colorTheme`): `'cityscan'` (teal), `'cosmic'` (purple), `'bio'` (green), `'infrared'` (heat), `'mono'` (monochrome), `'sunset'` (pink). Theme changes update renderer clear color, fog, and trigger rebuild to bake new point colors. Line colors are also rebuilt from endpoint point colors.
 
 **Color modes** (`params.colorMode`):
 - `'theme'` — default; each style bakes brightness-only gradients using the active theme
@@ -60,13 +60,13 @@ vite.config.js     # base: '/Point-cloud-studio/' for GitHub Pages
 
 **Point rendering**: Custom WebGL shader (not Three.js default square points). Fragment shader discards pixels outside unit circle (`dot(uv,uv) > 1.0`) and soft anti-aliases the edge. Points are always circular.
 
-**Adjacency / hover**: `setHovered(index)` runs 3-hop BFS cascade using `this._adjacency` (built in `_buildConnections()`). Colors: white → full accent → 60% → 30% dim across hops.
+**Adjacency / hover**: `setHovered(index)` runs 3-hop BFS cascade using `this._adjacency` (built in `_buildConnections()`). Both point colors and line vertex colors are updated. Points: white → accent → 60% → 30% dim. Lines: hop colors for adjacent edges; non-adjacent edges dim their `_lineBaseColors` by ×0.15.
 
-**Edge pulse**: `_buildConnections()` uses a custom `ShaderMaterial` (LINE_VERT/LINE_FRAG) with `aEdgeT`/`aEdgeId` attributes. A Gaussian pulse travels each edge, staggered by golden ratio per edge. `_lineUniforms.uTime` is updated every frame in `update()`.
+**Edge colors**: Lines use a per-vertex `color` attribute (not a flat uniform). Colors are baked from the two endpoint point colors at build time, capturing theme gradients and positional hue. Stored as `_lineBaseColors` (Float32Array). `setHovered(-1)` restores from `_lineBaseColors`. `applyTheme()` updates both the live buffer and `_lineBaseColors`. Line positions are synced from point positions every frame in `update()` via `_edgePairs` (Int32Array of [i,j] pairs) — this keeps drift, gravity, and explode physics reflected in the network.
 
 **Cameras**: Two cameras exist simultaneously — `camera` (PerspectiveCamera, FOV 60) and `orthoCamera` (OrthographicCamera). `activeCamera` points to whichever is active. `toggleOrtho()` syncs position/quaternion and updates OrbitControls. `resize()` updates both frustums; composer uses `renderPass.camera = activeCamera` each frame.
 
-**Post-processing (bloom)**: `EffectComposer` with `RenderPass → UnrealBloomPass → OutputPass`. When `bloomEnabled` is false, `renderer.render()` is called directly (avoids composer overhead). `composer.setSize()` is called on resize. Bloom params: `bloomPass.strength`, `.radius`, `.threshold`.
+**Post-processing (bloom)**: `EffectComposer` with `RenderPass → UnrealBloomPass → OutputPass`. When `bloomEnabled` is false, `renderer.render()` is called directly (avoids composer overhead). On resize: both `composer.setSize(w, h)` AND `bloomPass.resolution.set(w, h)` must be called. Bloom params: `bloomPass.strength`, `.radius`, `.threshold`.
 
 **Gravity cursor**: Left-mouse-hold sets `cloud.gravityTarget` (a `THREE.Vector3` in cloud local space). Mouse ray is intersected with a `THREE.Plane` at the scene origin facing the camera. Each frame in `_applyGravity()` (called from `update()`), points within `cloudRadius` spring toward the target (lerp 10%/frame); all spring back on release (decay ×0.92/frame). Displacement stored in `this.gravityPerturb` (Float32Array, reset on rebuild).
 
@@ -108,6 +108,7 @@ vite.config.js     # base: '/Point-cloud-studio/' for GitHub Pages
 - **Vite base path**: `base: '/Point-cloud-studio/'` in `vite.config.js` — needed for GitHub Pages. Do not remove.
 - **Debounce on sliders**: 120ms debounce on rebuild-triggering sliders to avoid thrashing during drag.
 - **`depthWrite: false`** on both points and lines — required for correct transparency blending.
+- **`camera` declaration order**: `camera` const must be declared before `new RenderPass(scene, camera)` — `const` is not hoisted. Reversing this causes a silent `undefined` camera and a black screen.
 - **Bloom + screenshot**: screenshot calls `renderer.render()` directly (not composer) so `preserveDrawingBuffer` captures the frame correctly. If bloom is on, the screenshot won't include bloom.
 - **`renderPass.camera`** is updated every frame in the animation loop (`renderPass.camera = activeCamera`) to stay in sync with ortho/perspective toggle — do not set it once at init.
 - **Gravity cursor conflicts with OrbitControls**: both listen to `mousedown`. Gravity intentionally activates on any left-click; drag-to-orbit still works because OrbitControls runs first via `controls.update()`. The explode handler fires on `click` (mouseup without significant movement), so dragging does not accidentally trigger explosions.
